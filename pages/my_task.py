@@ -4,10 +4,7 @@ import pandas as pd
 from database import fetch_all, execute_query
 from datetime import datetime, date, timedelta
 from googleapiclient.discovery import build
-# from google.oauth2 import service_account
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
+from google.oauth2 import service_account
 from googleapiclient.http import MediaIoBaseUpload
 import io
 
@@ -15,38 +12,38 @@ import io
 # 🤖 FUNGSI PEMBANTU: UPLOAD KE GOOGLE DRIVE (AUTO-SWITCH SIMULASI LOKAL)
 # =========================================================================
 def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
-    """
-    Upload file ke Google Drive dan otomatis membuat folder divisi jika belum ada.
-    """
-    CLIENT_SECRET_FILE = "client_secret.json"
-    ROOT_FOLDER_ID = '11sU-BVtM-VLhKPKYChDyXwgeaHcWG0xg'
-    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+    ROOT_FOLDER_ID = "11sU-BVtM-VLhKPKYChDyXwgeaHcWG0xg"
 
     try:
-        creds = None
-        if os.path.exists("token.json"):
-            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        SCOPES = ['https://www.googleapis.com/auth/drive']
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
-                creds = flow.run_local_server(port=0)
-            with open("token.json", "w") as token:
-                token.write(creds.to_json())
+        creds = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=SCOPES
+        )
 
-        service = build('drive', 'v3', credentials=creds)
-        
-        st.write("client_secret exists:", os.path.exists("client_secret.json"))
-        st.write("token exists:", os.path.exists("token.json"))
+        service = build(
+            'drive',
+            'v3',
+            credentials=creds
+        )
 
         def get_or_create_folder(folder_name, parent_folder_id=None):
-            query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            query = (
+                f"name='{folder_name}' "
+                f"and mimeType='application/vnd.google-apps.folder' "
+                f"and trashed=false"
+            )
+
             if parent_folder_id:
                 query += f" and '{parent_folder_id}' in parents"
 
-            results = service.files().list(q=query, fields="files(id, name)").execute()
+            results = service.files().list(
+                q=query,
+                fields="files(id, name)"
+            ).execute()
+
             folders = results.get('files', [])
 
             if folders:
@@ -57,16 +54,44 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
                 'mimeType': 'application/vnd.google-apps.folder',
                 'parents': [parent_folder_id]
             }
-            folder = service.files().create(body=folder_metadata, fields='id').execute()
+
+            folder = service.files().create(
+                body=folder_metadata,
+                fields='id'
+            ).execute()
+
             return folder.get('id')
 
-        divisi_folder_id = get_or_create_folder(divisi_name, ROOT_FOLDER_ID)
+        divisi_folder_id = get_or_create_folder(
+            divisi_name,
+            ROOT_FOLDER_ID
+        )
 
-        file_metadata = {'name': filename_on_drive, 'parents': [divisi_folder_id]}
-        media = MediaIoBaseUpload(io.BytesIO(uploaded_file.read()), mimetype=uploaded_file.type, resumable=True)
-        uploaded_drive_file = service.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+        file_metadata = {
+            'name': filename_on_drive,
+            'parents': [divisi_folder_id]
+        }
 
-        service.permissions().create(fileId=uploaded_drive_file.get('id'), body={'type': 'anyone', 'role': 'reader'}).execute()
+        media = MediaIoBaseUpload(
+            io.BytesIO(uploaded_file.read()),
+            mimetype=uploaded_file.type,
+            resumable=True
+        )
+
+        uploaded_drive_file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, webViewLink'
+        ).execute()
+
+        service.permissions().create(
+            fileId=uploaded_drive_file.get('id'),
+            body={
+                'type': 'anyone',
+                'role': 'reader'
+            }
+        ).execute()
+
         return uploaded_drive_file.get('webViewLink')
 
     except Exception as e:
