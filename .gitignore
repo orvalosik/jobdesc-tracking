@@ -7,7 +7,7 @@ tracking.db
 tracking_backup.db
 
 token.json
-credentials.json
+google_creds.json
 client_secret.json
 
 .streamlit/secrets.toml
