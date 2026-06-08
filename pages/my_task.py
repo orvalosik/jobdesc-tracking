@@ -37,6 +37,9 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
                 token.write(creds.to_json())
 
         service = build('drive', 'v3', credentials=creds)
+        
+        st.write("client_secret exists:", os.path.exists("client_secret.json"))
+        st.write("token exists:", os.path.exists("token.json"))
 
         def get_or_create_folder(folder_name, parent_folder_id=None):
             query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
