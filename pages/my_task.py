@@ -4,37 +4,39 @@ import pandas as pd
 from database import fetch_all, execute_query
 from datetime import datetime, date, timedelta
 from googleapiclient.discovery import build
-from google.oauth2 import service_account
 from googleapiclient.http import MediaIoBaseUpload
 import io
+from google.oauth2.credentials import Credentials
+from google.auth.transport.requests import Request
 
 # =========================================================================
 # 🤖 FUNGSI PEMBANTU: UPLOAD KE GOOGLE DRIVE (AUTO-SWITCH SIMULASI LOKAL)
 # =========================================================================
 def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
+    """
+    Upload file ke Google Drive dan otomatis membuat folder divisi jika belum ada.
+    """
 
     ROOT_FOLDER_ID = "11sU-BVtM-VLhKPKYChDyXwgeaHcWG0xg"
 
     try:
-        SCOPES = ['https://www.googleapis.com/auth/drive']
+        SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
-        creds = service_account.Credentials.from_service_account_info(
-            st.secrets["gcp_service_account"],
+        creds = Credentials(
+            token=None,
+            refresh_token=st.secrets["gdrive_oauth"]["refresh_token"],
+            token_uri=st.secrets["gdrive_oauth"]["token_uri"],
+            client_id=st.secrets["gdrive_oauth"]["client_id"],
+            client_secret=st.secrets["gdrive_oauth"]["client_secret"],
             scopes=SCOPES
         )
 
+        creds.refresh(Request())
+
         service = build(
-            'drive',
-            'v3',
+            "drive",
+            "v3",
             credentials=creds
-        )
-        
-        # DEBUG
-        st.write(
-            service.files().get(
-                fileId=ROOT_FOLDER_ID,
-                fields="id,name"
-            ).execute()
         )
 
         def get_or_create_folder(folder_name, parent_folder_id=None):
@@ -49,40 +51,35 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
 
             results = service.files().list(
                 q=query,
-                fields="files(id, name)",
-                supportsAllDrives=True,
-                includeItemsFromAllDrives=True
+                fields="files(id,name)"
             ).execute()
 
-            folders = results.get('files', [])
+            folders = results.get("files", [])
 
             if folders:
-                return folders[0]['id']
+                return folders[0]["id"]
 
             folder_metadata = {
-                'name': folder_name,
-                'mimeType': 'application/vnd.google-apps.folder',
-                'parents': [parent_folder_id]
+                "name": folder_name,
+                "mimeType": "application/vnd.google-apps.folder",
+                "parents": [parent_folder_id]
             }
 
             folder = service.files().create(
                 body=folder_metadata,
-                fields='id',
-                supportsAllDrives=True
+                fields="id"
             ).execute()
 
-            return folder.get('id')
+            return folder["id"]
 
         divisi_folder_id = get_or_create_folder(
             divisi_name,
             ROOT_FOLDER_ID
         )
-        
-        st.write("Folder tujuan:", divisi_folder_id)
 
         file_metadata = {
-            'name': filename_on_drive,
-            'parents': [divisi_folder_id]
+            "name": filename_on_drive,
+            "parents": [divisi_folder_id]
         }
 
         media = MediaIoBaseUpload(
@@ -90,25 +87,21 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
             mimetype=uploaded_file.type
         )
 
-        st.write("Nama file:", filename_on_drive)
-        st.write("Ukuran file:", len(uploaded_file.getvalue()))
-
         uploaded_drive_file = service.files().create(
             body=file_metadata,
             media_body=media,
-            fields='id, webViewLink',
-            supportsAllDrives=True
+            fields="id,webViewLink"
         ).execute()
 
         service.permissions().create(
-            fileId=uploaded_drive_file.get('id'),
+            fileId=uploaded_drive_file["id"],
             body={
-                'type': 'anyone',
-                'role': 'reader'
+                "type": "anyone",
+                "role": "reader"
             }
         ).execute()
 
-        return uploaded_drive_file.get('webViewLink')
+        return uploaded_drive_file["webViewLink"]
 
     except Exception as e:
         st.error(f"❌ Gagal mengunggah berkas ke Google Drive Server: {e}")
