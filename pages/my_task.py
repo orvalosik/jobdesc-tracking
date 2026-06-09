@@ -86,10 +86,12 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
         }
 
         media = MediaIoBaseUpload(
-            io.BytesIO(uploaded_file.read()),
-            mimetype=uploaded_file.type,
-            resumable=True
+            io.BytesIO(uploaded_file.getvalue()),
+            mimetype=uploaded_file.type
         )
+
+        st.write("Nama file:", filename_on_drive)
+        st.write("Ukuran file:", len(uploaded_file.getvalue()))
 
         uploaded_drive_file = service.files().create(
             body=file_metadata,
