@@ -28,6 +28,14 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
             'v3',
             credentials=creds
         )
+        
+        # DEBUG
+        st.write(
+            service.files().get(
+                fileId=ROOT_FOLDER_ID,
+                fields="id,name"
+            ).execute()
+        )
 
         def get_or_create_folder(folder_name, parent_folder_id=None):
             query = (
@@ -41,7 +49,9 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
 
             results = service.files().list(
                 q=query,
-                fields="files(id, name)"
+                fields="files(id, name)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
             ).execute()
 
             folders = results.get('files', [])
@@ -57,7 +67,8 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
 
             folder = service.files().create(
                 body=folder_metadata,
-                fields='id'
+                fields='id',
+                supportsAllDrives=True
             ).execute()
 
             return folder.get('id')
@@ -66,6 +77,8 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
             divisi_name,
             ROOT_FOLDER_ID
         )
+        
+        st.write("Folder tujuan:", divisi_folder_id)
 
         file_metadata = {
             'name': filename_on_drive,
@@ -81,7 +94,8 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
         uploaded_drive_file = service.files().create(
             body=file_metadata,
             media_body=media,
-            fields='id, webViewLink'
+            fields='id, webViewLink',
+            supportsAllDrives=True
         ).execute()
 
         service.permissions().create(
