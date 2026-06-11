@@ -193,9 +193,9 @@ def show_my_task():
         """
         templates = fetch_all(query_template, (user["role"], user["divisi"], kategori_periodik))
 
-        # Petakan opsi template yang ada + Tambahkan Opsi Mandiri 'Lainnya'
+        # Petakan opsi template yang ada 
         template_options = {t["nama_tugas"]: t["id"] for t in templates}
-        options_list = list(template_options.keys()) + ["✨ Tugas Lainnya (Input Manual)"]
+        options_list = list(template_options.keys())
 
         with col_job:
             pilihan_tugas = st.selectbox("Judul Pekerjaan", options_list, key="input_pilihan_tugas")
@@ -203,13 +203,6 @@ def show_my_task():
         # Form tetap dirender agar bawahan bisa selalu mengisi secara mandiri
         with st.form(key="form_logbook_rutin", clear_on_submit=True):
             
-            # 📝 JIKA PILIH LAINNYA: Munculkan text input untuk menulis judul jobdesc baru
-            nama_tugas_baru = ""
-            if pilihan_tugas == "✨ Tugas Lainnya (Input Manual)":
-                nama_tugas_baru = st.text_input(
-                    "✍️ Tulis Judul Tugas Rutin Baru", 
-                    placeholder="Misal: Menyusun rekapitulasi penjualan mingguan / Koordinasi Vendor..."
-                )
 
             keterangan = st.text_area("Keterangan Progres / Hasil Kerja", placeholder="Detailkan aktivitas yang Anda kerjakan...", height=120)
             uploaded_file = st.file_uploader("📎 Lampiran Hasil Kerja (Opsional)", type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg"])
@@ -217,44 +210,13 @@ def show_my_task():
             btn_submit_logbook = st.form_submit_button("💾 Simpan Logbook", use_container_width=True)
 
             if btn_submit_logbook:
-                if pilihan_tugas == "✨ Tugas Lainnya (Input Manual)" and not nama_tugas_baru.strip():
-                    st.error("⚠️ Mohon isi terlebih dahulu Judul Tugas Rutin Baru Anda!")
-                elif not keterangan.strip():
+                if not keterangan.strip():
                     st.error("⚠️ Kolom keterangan tidak boleh kosong!")
                 else:
                     now_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    jobdesc_id = None
+                    # jobdesc_id = None
 
-                    # --- LOGIKA PENANGANAN OPSI MANDIRI ---
-                    if pilihan_tugas == "✨ Tugas Lainnya (Input Manual)":
-                        judul_clean = nama_tugas_baru.strip()
-                        
-                        # Cek apakah tugas manual ini sebenarnya sudah pernah dibuat sebelumnya
-                        cek_exist = fetch_all(
-                            "SELECT id FROM jobdesc_templates WHERE nama_tugas = ? AND role = ? AND divisi = ? AND kategori_periodik = ?",
-                            (judul_clean, user["role"], user["divisi"], kategori_periodik)
-                        )
-                        
-                        if cek_exist:
-                            jobdesc_id = cek_exist[0]["id"]
-                        else:
-                            # Auto-insert ke daftar template agar besok-besok tinggal klik tanpa ngetik lagi
-                            execute_query(
-                                """
-                                INSERT INTO jobdesc_templates (role, divisi, kategori_periodik, nama_tugas, created_by_staff_id)
-                                VALUES (?, ?, ?, ?, ?)
-                                """,
-                                (user["role"], user["divisi"], kategori_periodik, judul_clean, user["id"])
-                            )
-                            # Ambil ID template baru tersebut
-                            res_baru = fetch_all(
-                                "SELECT id FROM jobdesc_templates WHERE nama_tugas = ? AND role = ? AND divisi = ? AND kategori_periodik = ?",
-                                (judul_clean, user["role"], user["divisi"], kategori_periodik)
-                            )
-                            if res_baru:
-                                jobdesc_id = res_baru[0]["id"]
-                    else:
-                        jobdesc_id = template_options[pilihan_tugas]
+                    jobdesc_id = template_options[pilihan_tugas]
 
                     if jobdesc_id:
                         # --- PROSES UPLOAD FILE ---
