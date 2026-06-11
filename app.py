@@ -82,15 +82,12 @@ def show_main_app():
     role = user["role"]
 
     # --- LOGIKA OTORISASI & ICON ---
-    if "Staff" in role:
-        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Profil", "person")]
-    elif role in ["Promosi & CS", "Business Development", "Sekretaris Direksi", 
-                  "Manager Marketing", "Manager Umum & Personalia", "Manager Keuangan", "Manager Teknik"]:
-        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Buat Tugas", "assignment_add"), ("Monitoring", "monitoring"), ("Kelola Pengguna", "group"), ("Profil", "person")]
+    if role in ["Business Development", "Manager Umum & Personalia"]:
+        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Kelola Pengguna", "group"), ("Profil", "person")]
     elif role in ["Direktur Utama", "Direktur"]:
         menu_items = [("Dashboard", "dashboard"), ("Buat Tugas", "assignment_add"), ("Monitoring", "monitoring"), ("Kelola Pengguna", "group"), ("Profil", "person")]
     else:
-        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Buat Tugas", "assignment_add"), ("Monitoring", "monitoring"), ("Profil", "person")]
+        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Profil", "person")]
 
     # ✅ SIDEBAR CONTENT
     with st.sidebar:
