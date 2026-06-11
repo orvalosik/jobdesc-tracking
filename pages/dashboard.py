@@ -29,10 +29,8 @@ def show_dashboard():
     with st.container(border=True):
         if user["divisi"] == "Dewan Direksi":
             cakupan = "Tugas Tim"
-        elif "Staff" in user["role"]:
-            cakupan = "Tugas Saya"
         else:
-            cakupan = st.radio("Cakupan Data:", ["Tugas Saya", "Tugas Tim"], horizontal=True)
+            cakupan = "Tugas Saya"
 
     st.markdown("<br>", unsafe_allow_html=True)
 
