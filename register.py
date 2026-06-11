@@ -90,7 +90,7 @@ def show_register():
             
             c1, c2 = st.columns(2)
             with c1:
-                role = st.selectbox("Posisi", ["Direktur Utama","Direktur","Promosi & CS","Business Development","Sekretaris Direksi","Manager Marketing", "Manager Umum & Personalia", "Manager Keuangan", "Manager Teknik", "Kabag. Seminar","Kabag. Personalia", "Kabag. Administrasi Keuangan", "Kabag. Penagihan", "Kabag. Akunting & Pajak","Kabag. Teknik","Kabag. Promosi & CS", "Supervisor ME","Supervisor Civil & Architectural", "Staff Administrasi Marketing","Staff Administrasi Seminar","Staff JDC Business Center","Staff Security","Staff Personalia/Spv. Security & Parkir","Staff Legal & Umum","Staff Fungsional Umum","Staff Receptionist","Staff Fungsional Penagihan","Staff Keuangan","Staff Kasir","Staff Invoice","Staff Admin Teknik"])
+                role = st.selectbox("Posisi", ["Direktur Utama","Direktur","Promosi & CS","Business Development","Sekretaris Direksi","Manager Marketing", "Manager Umum & Personalia", "Manager Keuangan", "Manager Teknik", "Kabag. Promosi & CS", "Supervisor Civil & Architectural"])
             with c2:
                 divisi = st.selectbox("Divisi", ["Dewan Direksi", "Promosi & CS", "Business Development", "Sekretaris Direksi", "Marketing", "Umum & Personalia", "Keuangan", "Teknik"])
 
