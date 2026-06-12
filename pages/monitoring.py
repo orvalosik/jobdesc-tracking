@@ -198,7 +198,7 @@ def render_list(user, only_approved=False):
                     st.session_state["selected_task_id"] = t["id"]
                     st.session_state["mon_view"] = "edit"
                     st.rerun()
-                if b2.button(":material/delete:", key=f"del_task_{t['id']}",
+                if b2.button(":material/delete: Hapus", key=f"del_task_{t['id']}",
                              disabled=not can_act, use_container_width=True):
                     execute_query("DELETE FROM tasks WHERE id=?", (t["id"],))
                     st.toast(f"Tugas '{t['judul']}' dihapus.")
