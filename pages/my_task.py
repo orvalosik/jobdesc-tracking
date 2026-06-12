@@ -207,7 +207,7 @@ def show_my_task():
 
         # Riwayat logbook
         st.markdown("<hr style='border-color:#E2E8F0; margin:20px 0'>", unsafe_allow_html=True)
-        st.markdown('<p style="font-size:15px;font-weight:600;color:#1E293B;margin-bottom:12px;">:material/history: Riwayat Logbook</p>', unsafe_allow_html=True)
+        st.markdown('<p style="font-size:15px;font-weight:600;color:#1E293B;margin-bottom:12px;">:Riwayat Logbook</p>', unsafe_allow_html=True)
 
         job_list = fetch_all("SELECT DISTINCT jt.nama_tugas FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id WHERE rl.user_id=?", (user["id"],))
         job_opts = ["Semua Pekerjaan"] + [j["nama_tugas"] for j in job_list]
