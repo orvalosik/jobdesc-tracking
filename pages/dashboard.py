@@ -1,18 +1,79 @@
 import streamlit as st
 from database import fetch_all
 from datetime import datetime, date
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+import plotly.express as px
 
 def show_dashboard():
-    # 🎨 UI Styling
     st.markdown("""
         <style>
-        .main { background-color: #f8f9fa; }
+        /* Header card */
         .header-card {
-            background: linear-gradient(135deg, #0D1B2A 0%, #1B263B 100%);
-            padding: 20px; border-radius: 12px; color: white; margin-bottom: 25px;
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            padding: 24px 28px;
+            border-radius: 16px;
+            color: white;
+            margin-bottom: 24px;
+            border: 1px solid rgba(16, 185, 129, 0.2);
         }
-        [data-testid="stMetricValue"] { font-size: 28px; color: #1B263B; font-weight: bold; }
+        .header-card h2 {
+            margin: 0 0 4px 0;
+            font-size: 22px;
+            font-weight: 600;
+            color: white !important;
+        }
+        .header-card p {
+            margin: 0;
+            font-size: 13px;
+            color: #94A3B8 !important;
+        }
+
+        /* Metric cards */
+        [data-testid="stMetric"] {
+            background: white;
+            border: 1px solid #E2E8F0;
+            border-radius: 14px;
+            padding: 16px 20px;
+        }
+        [data-testid="stMetricLabel"] { font-size: 12px !important; color: #64748B !important; }
+        [data-testid="stMetricValue"] { font-size: 26px !important; color: #1E293B !important; font-weight: 700 !important; }
+
+        /* Status badge */
+        .status-badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-assigned  { background:#EFF6FF; color:#1D4ED8; }
+        .badge-submitted { background:#FFF7ED; color:#C2410C; }
+        .badge-revision  { background:#FEF9C3; color:#A16207; }
+        .badge-approved  { background:#DCFCE7; color:#15803D; }
+
+        /* Filter container */
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 12px !important;
+            border-color: #E2E8F0 !important;
+        }
+
+        /* Tab styling */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 4px;
+            background: #F1F5F9;
+            padding: 4px;
+            border-radius: 10px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            border-radius: 8px;
+            padding: 6px 18px;
+            font-size: 13px;
+        }
+        .stTabs [aria-selected="true"] {
+            background: white !important;
+            font-weight: 600 !important;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -21,261 +82,253 @@ def show_dashboard():
         st.stop()
 
     user = st.session_state["user"]
-    st.markdown('<div class="header-card"><h1>📊 Dashboard</h1><p>Analisis progres pengerjaan tugas & logbook aktivitas secara akurat.</p></div>', unsafe_allow_html=True)
+
+    # Header
+    now = datetime.now()
+    greeting = "Selamat pagi" if now.hour < 12 else ("Selamat siang" if now.hour < 15 else ("Selamat sore" if now.hour < 18 else "Selamat malam"))
+    st.markdown(f"""
+        <div class="header-card">
+            <h2>Dashboard</h2>
+            <p>{greeting}, <strong style="color:#10B981;">{user['nama']}</strong> — {now.strftime('%A, %d %B %Y')}</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    cakupan = "Tugas Tim" if user["divisi"] == "Dewan Direksi" else "Tugas Saya"
+
+    tab_non_rutin, tab_rutin = st.tabs([
+        "Non-Rutinitas (Instruksi)",
+        "Rutinitas (Logbook Harian)"
+    ])
 
     # =========================================================================
-    # ⚙️ FILTER UTAMA: CAKUPAN DATA (BAHASA INDONESIA)
+    # TAB 1: NON-RUTINITAS
     # =========================================================================
-    with st.container(border=True):
-        if user["divisi"] == "Dewan Direksi":
-            cakupan = "Tugas Tim"
-        else:
-            cakupan = "Tugas Saya"
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # =========================================================================
-    # SPLIT HALAMAN UTAMA BERDASARKAN TAB RUTINITAS & NON-RUTINITAS
-    # =========================================================================
-    tab_non_rutin, tab_rutin = st.tabs(["🚀 Non-Rutinitas (Instruksi)", "📅 Rutinitas (Logbook Harian)"])
-
-    # -------------------------------------------------------------------------
-    # TAB 1: DASHBOARD NON-RUTINITAS (SISTEM TUGAS)
-    # -------------------------------------------------------------------------
     with tab_non_rutin:
-        st.subheader("Analisis Instruksi & Proyek Khusus")
-        
-        # Filter Rentang Tanggal Khusus Tugas
         with st.container(border=True):
-            st.write("📅 **Periode Pembagian Tugas**")
+            st.markdown(":material/calendar_month: **Periode Pembagian Tugas**")
             c1, c2 = st.columns(2)
             with c1:
-                start_dt = st.date_input("Dari Tanggal (Tugas)", value=date(2026, 1, 1), key="start_task")
+                start_dt = st.date_input("Dari Tanggal", value=date(2026, 1, 1), key="start_task")
             with c2:
-                end_dt = st.date_input("Sampai Tanggal (Tugas)", value=date.today(), key="end_task")
+                end_dt = st.date_input("Sampai Tanggal", value=date.today(), key="end_task")
 
             sel_karyawan = "Semua"
-            sel_divisi = "Semua"
-            
+            sel_divisi   = "Semua"
+            karyawan_map = {}
+
             if cakupan == "Tugas Tim":
                 st.markdown("<br>", unsafe_allow_html=True)
                 f1, f2 = st.columns(2)
                 with f1:
-                    # Ambil daftar user sesuai hak akses
                     if user["divisi"] == "Dewan Direksi":
-                        db_users = fetch_all("""
-                            SELECT id, nama, role 
-                            FROM users
-                            ORDER BY role ASC, nama ASC
-                        """)
+                        db_users = fetch_all("SELECT id, nama, role FROM users ORDER BY role, nama")
                     else:
-                        db_users = fetch_all("""
-                            SELECT id, nama, role 
-                            FROM users
-                            WHERE atasan_id = ?
-                            ORDER BY role ASC, nama ASC
-                        """, (user["id"],))
+                        db_users = fetch_all("SELECT id, nama, role FROM users WHERE atasan_id = ? ORDER BY role, nama", (user["id"],))
 
-                    # Format dropdown: Role - Nama
                     karyawan_options = ["Semua"]
-                    karyawan_map = {}
-
                     for u in db_users:
-                        label = f"{u['role']} - {u['nama']}"
+                        label = f"{u['role']} — {u['nama']}"
                         karyawan_options.append(label)
                         karyawan_map[label] = u["id"]
 
-                    sel_karyawan = st.selectbox(
-                        "Pilih Karyawan",
-                        karyawan_options,
-                        key="karyawan_task"
-                    )
+                    sel_karyawan = st.selectbox(":material/person: Karyawan", karyawan_options, key="karyawan_task")
 
                 with f2:
                     if user["divisi"] == "Dewan Direksi":
-                        divisi_list = ["Semua", "Promosi & CS", "Business Development", "Sekretaris Direksi", "Marketing", "Umum & Personalia", "Keuangan", "Teknik"]
-                        sel_divisi = st.selectbox("Filter Divisi (Tugas)", divisi_list, key="div_task")
+                        divisi_list = ["Semua","Promosi & CS","Business Development","Sekretaris Direksi","Marketing","Umum & Personalia","Keuangan","Teknik"]
+                        sel_divisi = st.selectbox(":material/apartment: Divisi", divisi_list, key="div_task")
                     else:
-                        st.info(f"📍 Divisi Dipantau: **{user['divisi']}**")
+                        st.info(f"Divisi dipantau: **{user['divisi']}**")
                         sel_divisi = user["divisi"]
 
-        # DATA PROCESSING TASK
+        # Fetch & filter tasks
         if cakupan == "Tugas Saya":
-            query = "SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE t.assigned_to = ?"
-            raw_tasks = fetch_all(query, (user["id"],))
+            raw_tasks = fetch_all("SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE t.assigned_to = ?", (user["id"],))
+        elif user["divisi"] == "Dewan Direksi":
+            raw_tasks = fetch_all("SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id")
         else:
-            if user["divisi"] == "Dewan Direksi":
-                query = "SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id"
-                raw_tasks = fetch_all(query)
-            else:
-                query = "SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE u.atasan_id = ?"
-                raw_tasks = fetch_all(query, (user["id"],))
+            raw_tasks = fetch_all("SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE u.atasan_id = ?", (user["id"],))
 
         tasks = []
         for t in raw_tasks:
             try:
                 raw_assign = t["tanggal_assign"]
                 if not raw_assign: continue
-                assign_date_str = raw_assign.split(" ")[0]
-                created_date = datetime.strptime(assign_date_str, "%Y-%m-%d").date()
-                
-                if start_dt <= created_date <= end_dt:
-                    match_divisi = (sel_divisi == "Semua" or t["divisi"] == sel_divisi)
-                if sel_karyawan == "Semua":
-                    match_karyawan = True
-                else:
-                    selected_user_id = karyawan_map.get(sel_karyawan)
-                    match_karyawan = (t["assigned_to"] == selected_user_id)
-
+                created_date = datetime.strptime(raw_assign.split(" ")[0], "%Y-%m-%d").date()
+                if not (start_dt <= created_date <= end_dt): continue
+                match_divisi   = (sel_divisi == "Semua" or t["divisi"] == sel_divisi)
+                match_karyawan = (sel_karyawan == "Semua" or t["assigned_to"] == karyawan_map.get(sel_karyawan))
                 if match_divisi and match_karyawan:
                     tasks.append(t)
             except: continue
 
         if not tasks:
-            st.warning("⚠️ Tidak ada data tugas khusus yang ditemukan untuk kriteria ini.")
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info(":material/search_off: Tidak ada data tugas untuk kriteria ini.")
         else:
-            # HITUNG METRIK KINERJA TUGAS
-            completed = [t for t in tasks if t["status_task"].lower() == "approved"]
+            completed     = [t for t in tasks if t["status_task"].lower() == "approved"]
             not_completed = len(tasks) - len(completed)
-            today = date.today()
+            today         = date.today()
             on_time, late = 0, 0
-            
-            # Hitung tugas yang approved per orang untuk keperluan fitur barumu
             approved_per_karyawan = {}
-            
+
             for t in tasks:
                 try:
+                    nama_k  = t["nama_karyawan"]
+                    status  = t["status_task"].lower()
                     task_id = t["id"]
-                    nama_karyawan = t["nama_karyawan"]
-                    status_task = t["status_task"].lower()
-                    
-                    # Catat ke dictionary jika statusnya approved
-                    if status_task == "approved":
-                        approved_per_karyawan[nama_karyawan] = approved_per_karyawan.get(nama_karyawan, 0) + 1
-                    elif nama_karyawan not in approved_per_karyawan:
-                        # Tetap daftarkan nama orang tersebut dengan nilai 0 agar muncul di grafik
-                        approved_per_karyawan[nama_karyawan] = 0
 
-                    subs = fetch_all("SELECT tanggal_submit FROM submissions WHERE task_id = ? ORDER BY tanggal_submit ASC", (task_id,))
+                    if status == "approved":
+                        approved_per_karyawan[nama_k] = approved_per_karyawan.get(nama_k, 0) + 1
+                    elif nama_k not in approved_per_karyawan:
+                        approved_per_karyawan[nama_k] = 0
+
+                    subs       = fetch_all("SELECT tanggal_submit FROM submissions WHERE task_id = ? ORDER BY tanggal_submit ASC", (task_id,))
                     dl_history = fetch_all("SELECT new_deadline, changed_at FROM deadline_history WHERE task_id = ? ORDER BY changed_at ASC", (task_id,))
-                    
+
                     if subs:
-                        first_submit_str = subs[0]["tanggal_submit"].split(" ")[0]
-                        submit_date = datetime.strptime(first_submit_str, "%Y-%m-%d").date()
+                        submit_date     = datetime.strptime(subs[0]["tanggal_submit"].split(" ")[0], "%Y-%m-%d").date()
                         target_deadline = datetime.strptime(t["deadline"], "%Y-%m-%d").date()
-                        
                         for hist in dl_history:
-                            change_date_str = hist["changed_at"].split(" ")[0]
-                            change_date = datetime.strptime(change_date_str, "%Y-%m-%d").date()
+                            change_date = datetime.strptime(hist["changed_at"].split(" ")[0], "%Y-%m-%d").date()
                             if change_date <= submit_date:
                                 target_deadline = datetime.strptime(hist["new_deadline"], "%Y-%m-%d").date()
-                        
                         if submit_date <= target_deadline: on_time += 1
                         else: late += 1
                     else:
-                        current_deadline = datetime.strptime(t["deadline"], "%Y-%m-%d").date()
-                        if current_deadline >= today: on_time += 1
+                        if datetime.strptime(t["deadline"], "%Y-%m-%d").date() >= today: on_time += 1
                         else: late += 1
                 except: on_time += 1
 
-            # RENDER VISUALISASI TUGAS NON-RUTIN
-            m1, m2 = st.columns([1, 1.5], gap="large")
-            with m1:
-                st.write("**Persentase Kelayakan Selesai (Approved)**")
-                fig, ax = plt.subplots(figsize=(4, 4))
-                sizes = [len(completed), not_completed] if (len(completed) + not_completed) > 0 else [0, 1]
-                ax.pie(sizes, labels=["Disetujui", "Pending"], autopct='%1.1f%%', startangle=90, colors=['#1B263B', '#E0E1DD'])
-                ax.axis('equal')
-                st.pyplot(fig)
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            with m2:
-                st.write("**Ringkasan Angka Kunci**")
-                sm1, sm2 = st.columns(2)
-                sm1.metric("Total Tugas Instruksi", len(tasks))
-                sm1.metric("Selesai Tepat Waktu", on_time)
-                sm2.metric("Status Approved", len(completed))
-                sm2.metric("Terlambat / Lewat Deadline", late, delta=late if late > 0 else None, delta_color="inverse")
+            # ── Metrik ──
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric(":material/assignment: Total Tugas", len(tasks))
+            m2.metric(":material/check_circle: Approved", len(completed))
+            m3.metric(":material/schedule: Tepat Waktu", on_time)
+            m4.metric(":material/warning: Terlambat", late, delta=late if late > 0 else None, delta_color="inverse")
 
-            # 🚀 GRAFIK BARU: JUMlAH TUGAS APPROVED PER KARYAWAN (Hanya untuk Tugas Tim)
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── Chart baris 1 ──
+            ch1, ch2 = st.columns(2)
+
+            with ch1:
+                st.markdown("**Kelayakan Penyelesaian Tugas**")
+                labels = ["Disetujui", "Pending"]
+                values = [len(completed), not_completed]
+                colors = ["#10B981", "#E2E8F0"]
+
+                fig_donut = go.Figure(go.Pie(
+                    labels=labels,
+                    values=values,
+                    hole=0.65,
+                    marker=dict(colors=colors, line=dict(color="white", width=2)),
+                    textinfo="percent",
+                    textfont=dict(size=13),
+                    hovertemplate="%{label}: %{value} tugas<extra></extra>"
+                ))
+                fig_donut.add_annotation(
+                    text=f"<b>{len(completed)}</b><br><span style='font-size:11px'>Approved</span>",
+                    x=0.5, y=0.5, showarrow=False, font=dict(size=16, color="#1E293B"),
+                    align="center"
+                )
+                fig_donut.update_layout(
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    height=260,
+                    showlegend=True,
+                    legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center", font=dict(size=12)),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)"
+                )
+                st.plotly_chart(fig_donut, use_container_width=True)
+
+            with ch2:
+                st.markdown("**Status Distribusi Tugas**")
+                status_labels = ["Assigned", "Submitted", "Revision", "Approved"]
+                status_colors = ["#3B82F6", "#F97316", "#EAB308", "#10B981"]
+                status_values = [len([t for t in tasks if t["status_task"].lower() == s.lower()]) for s in status_labels]
+
+                fig_bar = go.Figure(go.Bar(
+                    x=status_labels,
+                    y=status_values,
+                    marker=dict(color=status_colors, line=dict(color="white", width=1)),
+                    text=status_values,
+                    textposition="outside",
+                    hovertemplate="%{x}: %{y} tugas<extra></extra>"
+                ))
+                fig_bar.update_layout(
+                    margin=dict(t=10, b=10, l=10, r=10),
+                    height=260,
+                    yaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
+                    xaxis=dict(showgrid=False),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    bargap=0.35
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+            # ── Chart approved per karyawan ──
             if cakupan == "Tugas Tim" and approved_per_karyawan:
-                st.markdown("---")
-                st.write("**🎯 Jumlah Tugas Khusus yang Berhasil Disetujui (Approved) per Anggota Tim:**")
-                
-                karyawan_tugas = list(approved_per_karyawan.keys())
-                skor_tugas = list(approved_per_karyawan.values())
-                
-                fig_user_task, ax_user_task = plt.subplots(figsize=(8, 3.5))
-                bars_ut = ax_user_task.bar(karyawan_tugas, skor_tugas, color='#1B263B', width=0.4)
-                ax_user_task.spines['top'].set_visible(False)
-                ax_user_task.spines['right'].set_visible(False)
-                ax_user_task.set_ylabel("Jumlah Tugas")
-                ax_user_task.bar_label(bars_ut, padding=3, weight='bold')
-                plt.tight_layout()
-                st.pyplot(fig_user_task)
+                st.markdown("**Tugas Approved per Anggota Tim**")
+                sorted_items  = sorted(approved_per_karyawan.items(), key=lambda x: x[1], reverse=True)
+                names_sorted  = [i[0] for i in sorted_items]
+                values_sorted = [i[1] for i in sorted_items]
 
-            st.markdown("---")
-            st.write("**Detail Distribusi Status Saat Ini:**")
-            status_cols = st.columns(4)
-            for i, s in enumerate(["assigned", "submitted", "revision", "approved"]):
-                count = len([t for t in tasks if t["status_task"].lower() == s])
-                status_cols[i].metric(s.capitalize(), count)
+                fig_team = go.Figure(go.Bar(
+                    y=names_sorted,
+                    x=values_sorted,
+                    orientation="h",
+                    marker=dict(
+                        color=values_sorted,
+                        colorscale=[[0, "#D1FAE5"], [1, "#059669"]],
+                        line=dict(color="white", width=1)
+                    ),
+                    text=values_sorted,
+                    textposition="outside",
+                    hovertemplate="%{y}: %{x} tugas approved<extra></extra>"
+                ))
+                fig_team.update_layout(
+                    margin=dict(t=10, b=10, l=10, r=80),
+                    height=max(200, len(names_sorted) * 44),
+                    xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
+                    yaxis=dict(showgrid=False, autorange="reversed"),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)"
+                )
+                st.plotly_chart(fig_team, use_container_width=True)
 
-
-    # -------------------------------------------------------------------------
-    # TAB 2: DASHBOARD RUTINITAS (MODUL LOGBOOK HARIAN)
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # TAB 2: RUTINITAS (LOGBOOK)
+    # =========================================================================
     with tab_rutin:
-        st.subheader("Analisis Beban Kerja Harian (Logbook)")
-        
-        # Filter Rentang Tanggal Khusus Logbook
         with st.container(border=True):
-            st.write("📅 **Periode Pengisian Aktivitas Karyawan**")
+            st.markdown(":material/calendar_month: **Periode Pengisian Aktivitas**")
             lr1, lr2 = st.columns(2)
             with lr1:
-                start_log_dt = st.date_input("Dari Tanggal (Logbook)", value=date(2026, 1, 1), key="start_log")
+                start_log_dt = st.date_input("Dari Tanggal", value=date(2026, 1, 1), key="start_log")
             with lr2:
-                end_log_dt = st.date_input("Sampai Tanggal (Logbook)", value=date.today(), key="end_log")
+                end_log_dt = st.date_input("Sampai Tanggal", value=date.today(), key="end_log")
 
             sel_div_log = "Semua"
             if cakupan == "Tugas Tim":
                 st.markdown("<br>", unsafe_allow_html=True)
                 if user["divisi"] == "Dewan Direksi":
-                    divisi_list_log = ["Semua", "Promosi & CS", "Business Development", "Sekretaris Direksi", "Marketing", "Umum & Personalia", "Keuangan", "Teknik"]
-                    sel_div_log = st.selectbox("Filter Divisi (Logbook)", divisi_list_log, key="div_log")
+                    divisi_list_log = ["Semua","Promosi & CS","Business Development","Sekretaris Direksi","Marketing","Umum & Personalia","Keuangan","Teknik"]
+                    sel_div_log = st.selectbox(":material/apartment: Divisi", divisi_list_log, key="div_log")
                 else:
-                    st.info(f"📍 Memantau Logbook Divisi: **{user['divisi']}**")
+                    st.info(f"Memantau logbook divisi: **{user['divisi']}**")
                     sel_div_log = user["divisi"]
 
-        # DATA PROCESSING LOGBOOK
+        # Fetch & filter logbook
         if cakupan == "Tugas Saya":
-            query_log = """
-                SELECT rl.*, jt.nama_tugas, u.nama, u.divisi 
-                FROM routine_logbooks rl
-                JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id
-                JOIN users u ON rl.user_id = u.id
-                WHERE rl.user_id = ?
-            """
-            raw_logs = fetch_all(query_log, (user["id"],))
+            raw_logs = fetch_all("SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id WHERE rl.user_id = ?", (user["id"],))
+        elif user["divisi"] == "Dewan Direksi":
+            raw_logs = fetch_all("SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id")
         else:
-            if user["divisi"] == "Dewan Direksi":
-                query_log = """
-                    SELECT rl.*, jt.nama_tugas, u.nama, u.divisi 
-                    FROM routine_logbooks rl
-                    JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id
-                    JOIN users u ON rl.user_id = u.id
-                """
-                raw_logs = fetch_all(query_log)
-            else:
-                query_log = """
-                    SELECT rl.*, jt.nama_tugas, u.nama, u.divisi 
-                    FROM routine_logbooks rl
-                    JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id
-                    JOIN users u ON rl.user_id = u.id
-                    WHERE u.atasan_id = ?
-                """
-                raw_logs = fetch_all(query_log, (user["id"],))
+            raw_logs = fetch_all("SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id WHERE u.atasan_id = ?", (user["id"],))
 
-        # Terapkan filter rentang waktu dan divisi logbook
         valid_logs = []
         for log in raw_logs:
             try:
@@ -286,71 +339,88 @@ def show_dashboard():
             except: continue
 
         if not valid_logs:
-            st.warning("⚠️ Tidak ada data rekaman logbook rutin yang cocok pada periode ini.")
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.info(":material/search_off: Tidak ada data logbook untuk periode ini.")
         else:
-            # LOGIKA HITUNG METRIK UTAMA LOGBOOK
-            total_log_entries = len(valid_logs)
-            
             karyawan_counts = {}
             kategori_counts = {}
             for log in valid_logs:
-                nama = log["nama"]
-                kat = log["nama_tugas"]
-                karyawan_counts[nama] = karyawan_counts.get(nama, 0) + 1
-                kategori_counts[kat] = kategori_counts.get(kat, 0) + 1
-            
-            karyawan_teraktif = max(karyawan_counts, key=karyawan_counts.get) if karyawan_counts else "Tidak Ada"
-            kategori_terbanyak = max(kategori_counts, key=kategori_counts.get) if kategori_counts else "Tidak Ada"
+                karyawan_counts[log["nama"]]       = karyawan_counts.get(log["nama"], 0) + 1
+                kategori_counts[log["nama_tugas"]] = kategori_counts.get(log["nama_tugas"], 0) + 1
 
-            # Tampilkan 3 Metric Cards Sejajar
+            karyawan_teraktif   = max(karyawan_counts, key=karyawan_counts.get)
+            kategori_terbanyak  = max(kategori_counts, key=kategori_counts.get)
+            total_hari_aktif    = len(set([l["tanggal_input"] for l in valid_logs]))
+
+            st.markdown("<br>", unsafe_allow_html=True)
+
             lm1, lm2, lm3 = st.columns(3)
-            lm1.metric("Total Laporan Rutin", f"{total_log_entries} Record")
-            
+            lm1.metric(":material/description: Total Laporan", f"{len(valid_logs)} record")
             if cakupan == "Tugas Tim":
-                lm2.metric("Karyawan Paling Aktif", karyawan_teraktif, f"{karyawan_counts.get(karyawan_teraktif, 0)}x Isi")
+                lm2.metric(":material/emoji_events: Paling Aktif", karyawan_teraktif, f"{karyawan_counts[karyawan_teraktif]}x")
             else:
-                total_hari_aktif = len(set([l["tanggal_input"] for l in valid_logs]))
-                lm2.metric("Jumlah Hari Kerja Efektif", f"{total_hari_aktif} Hari")
-                
-            lm3.metric("Kategori Kerja Terbanyak", 
-                       kategori_terbanyak if len(kategori_terbanyak) <= 15 else kategori_terbanyak[:15]+"...", 
-                       f"{kategori_counts.get(kategori_terbanyak, 0)} Aktivitas")
+                lm2.metric(":material/today: Hari Kerja Efektif", f"{total_hari_aktif} hari")
+            label_kat = kategori_terbanyak if len(kategori_terbanyak) <= 18 else kategori_terbanyak[:16]+"…"
+            lm3.metric(":material/work: Aktivitas Terbanyak", label_kat, f"{kategori_counts[kategori_terbanyak]}x")
 
-            st.markdown("---")
+            st.markdown("<br>", unsafe_allow_html=True)
 
-            # 📊 SEKSI VISUALISASI DUA GRAFIK UNTUK RUTINITAS
-            col_graph1, col_graph2 = st.columns(2)
+            col_g1, col_g2 = st.columns(2)
 
-            with col_graph1:
-                st.write("**📋 Distribusi Kategori Pekerjaan (Jobdesc):**")
-                categories = list(kategori_counts.keys())
-                counts = list(kategori_counts.values())
-                clean_categories = [c if len(c) <= 20 else c[:17]+"..." for c in categories]
+            with col_g1:
+                st.markdown("**Distribusi Kategori Pekerjaan**")
+                cats   = list(kategori_counts.keys())
+                cnts   = list(kategori_counts.values())
+                labels_clean = [c if len(c) <= 22 else c[:20]+"…" for c in cats]
 
-                fig_bar, ax_bar = plt.subplots(figsize=(5, 4))
-                bars = ax_bar.barh(clean_categories, counts, color='#2A9D8F', height=0.5)
-                ax_bar.spines['top'].set_visible(False)
-                ax_bar.spines['right'].set_visible(False)
-                ax_bar.set_xlabel("Jumlah Aktivitas")
-                ax_bar.bar_label(bars, padding=3, fontname='sans-serif', weight='bold')
-                plt.tight_layout()
-                st.pyplot(fig_bar)
+                fig_hbar = go.Figure(go.Bar(
+                    y=labels_clean,
+                    x=cnts,
+                    orientation="h",
+                    marker=dict(
+                        color=cnts,
+                        colorscale=[[0, "#D1FAE5"], [1, "#059669"]],
+                    ),
+                    text=cnts,
+                    textposition="outside",
+                    hovertemplate="%{y}: %{x} aktivitas<extra></extra>"
+                ))
+                fig_hbar.update_layout(
+                    margin=dict(t=10, b=10, l=10, r=50),
+                    height=max(200, len(cats) * 40),
+                    xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
+                    yaxis=dict(showgrid=False, autorange="reversed"),
+                    paper_bgcolor="rgba(0,0,0,0)",
+                    plot_bgcolor="rgba(0,0,0,0)"
+                )
+                st.plotly_chart(fig_hbar, use_container_width=True)
 
-            with col_graph2:
-                if cakupan == "Tugas Tim" and karyawan_counts:
-                    st.write("**👥 Jumlah Pengisian Logbook per Anggota Tim:**")
-                    list_nama_karyawan = list(karyawan_counts.keys())
-                    list_jumlah_logbook = list(karyawan_counts.values())
+            with col_g2:
+                if cakupan == "Tugas Tim":
+                    st.markdown("**Pengisian Logbook per Anggota**")
+                    names = list(karyawan_counts.keys())
+                    vals  = list(karyawan_counts.values())
 
-                    fig_user_log, ax_user_log = plt.subplots(figsize=(5, 4))
-                    # Warna jingga coral khas audit logbook agar beda dari grafik kategori
-                    bars_ul = ax_user_log.barh(list_nama_karyawan, list_jumlah_logbook, color='#E76F51', height=0.5)
-                    ax_user_log.spines['top'].set_visible(False)
-                    ax_user_log.spines['right'].set_visible(False)
-                    ax_user_log.set_xlabel("Total Hari Melapor")
-                    ax_user_log.bar_label(bars_ul, padding=3, fontname='sans-serif', weight='bold')
-                    plt.tight_layout()
-                    st.pyplot(fig_user_log)
+                    fig_ul = go.Figure(go.Bar(
+                        y=names,
+                        x=vals,
+                        orientation="h",
+                        marker=dict(
+                            color=vals,
+                            colorscale=[[0, "#FED7AA"], [1, "#EA580C"]],
+                        ),
+                        text=vals,
+                        textposition="outside",
+                        hovertemplate="%{y}: %{x} laporan<extra></extra>"
+                    ))
+                    fig_ul.update_layout(
+                        margin=dict(t=10, b=10, l=10, r=50),
+                        height=max(200, len(names) * 40),
+                        xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
+                        yaxis=dict(showgrid=False, autorange="reversed"),
+                        paper_bgcolor="rgba(0,0,0,0)",
+                        plot_bgcolor="rgba(0,0,0,0)"
+                    )
+                    st.plotly_chart(fig_ul, use_container_width=True)
                 else:
-                    # Tampilan alternatif jika melihat dashboard milik sendiri
-                    st.info("ℹ️ Grafik performa per orang hanya tersedia pada menu peninjauan Tugas Tim.")
+                    st.info("Grafik perbandingan per orang tersedia di tampilan Tugas Tim.")
