@@ -2,18 +2,18 @@ import streamlit as st
 from database import init_db
 from login import show_login
 from register import show_register
-import base64
 
 # =========================
 # CONFIG
 # =========================
-def get_base64_of_bin_file(bin_file):
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-logo_str = get_base64_of_bin_file('jdc_logo.png')
+from PIL import Image
 
-st.set_page_config(page_title="Tracking Jobdesc", layout="wide", page_icon=logo_str)
+st.set_page_config(
+    page_title="Tracking Jobdesc",
+    layout="wide",
+    page_icon=Image.open("jdc_logo.png")
+)
+
 
 init_db()
 
