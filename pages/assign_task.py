@@ -202,7 +202,7 @@ def show_assign_task():
 
                 # Form tambah template
                 with st.form("form_master_tugas", clear_on_submit=True):
-                    st.markdown('<p class="section-title">:material/add_circle: Tambah Template Baru</p>', unsafe_allow_html=True)
+                    st.markdown('<p class="section-title">Tambah Template Baru</p>', unsafe_allow_html=True)
                     nama_tugas = st.text_input("Nama Tugas Rutin", placeholder="Contoh: Rekap absensi harian")
                     col1, col2 = st.columns(2)
                     with col1:
@@ -225,7 +225,7 @@ def show_assign_task():
                             st.rerun()
 
                 st.markdown("<hr style='border-color:#E2E8F0; margin:20px 0'>", unsafe_allow_html=True)
-                st.markdown('<p class="section-title">:material/list: Daftar Template Tugas</p>', unsafe_allow_html=True)
+                st.markdown('<p class="section-title">Daftar Template Tugas</p>', unsafe_allow_html=True)
 
                 filter_options  = ["Semua Jabatan"] + list_role
                 selected_filter = st.selectbox("Filter Jabatan", filter_options)
