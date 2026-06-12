@@ -83,7 +83,9 @@ def show_main_app():
 
     # --- LOGIKA OTORISASI & ICON ---
     if role in ["Business Development", "Manager Umum & Personalia"]:
-        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Kelola Pengguna", "group"), ("Profil", "person")]
+        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Buat Tugas", "assignment_add"), ("Kelola Pengguna", "group"), ("Profil", "person")]
+    elif role in ["Manager Keuangan", "Manager Marketing", "Manager Teknik"]:
+        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Buat Tugas", "assignment_add"), ("Profil", "person")]
     elif role in ["Direktur Utama", "Direktur"]:
         menu_items = [("Dashboard", "dashboard"), ("Buat Tugas", "assignment_add"), ("Monitoring", "monitoring"), ("Kelola Pengguna", "group"), ("Profil", "person")]
     else:
