@@ -6,7 +6,7 @@ from register import show_register
 # =========================
 # CONFIG
 # =========================
-st.set_page_config(page_title="Tracking Jobdesc", layout="wide")
+st.set_page_config(page_title="Tracking Jobdesc", layout="wide", page_icon="📋")
 
 init_db()
 
@@ -23,57 +23,81 @@ if "current_page" not in st.session_state:
     st.session_state.current_page = "Dashboard"
 
 # =========================
-# MAIN APP (SETELAH LOGIN)
+# MAIN APP
 # =========================
 def show_main_app():
-    # 🎨 Custom CSS for Navy Gradient Sidebar & Uniform Buttons (SCOPED)
     st.markdown("""
         <style>
-            /* 1. Background Sidebar Navy Gradient */
+            /* ── Sidebar base ── */
             [data-testid="stSidebar"] {
-                background: linear-gradient(180deg, #0D1B2A 0%, #1B263B 100%) !important;
-                color: white;
+                background: linear-gradient(180deg, #0F172A 0%, #1E293B 100%) !important;
+                border-right: 1px solid rgba(148, 163, 184, 0.08) !important;
             }
 
-            /* 2. Sembunyikan Navigasi Bawaan Streamlit */
+            /* Sembunyikan navigasi bawaan */
             [data-testid="stSidebarNav"] { display: none !important; }
 
-            /* 3. Styling Tombol Menu AGAR HANYA BERAKSI DI SIDEBAR */
+            /* ── Tombol menu sidebar ── */
             [data-testid="stSidebar"] .stButton > button {
                 width: 100%;
-                border-radius: 8px;
-                border: 1px solid rgba(255,255,255,0.1);
-                background-color: rgba(255,255,255,0.05);
-                color: white !important;
-                text-align: left;
-                padding: 10px 20px;
-                transition: all 0.3s ease;
-            }
-
-            /* 4. Efek Hover & Active HANYA DI SIDEBAR (Warna Biru Navy Terang / Abu) */
-            [data-testid="stSidebar"] .stButton > button:hover {
-                background-color: #415A77 !important;
-                border-color: #778DA9 !important;
-            }
-            
-            /* Warna saat tombol terpilih (Active) HANYA DI SIDEBAR */
-            [data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div:has(button[kind="primary"]) > div {
-                background: transparent !important;
-            }
-            
-            [data-testid="stSidebar"] .stButton > button[kind="primary"] {
-                background-color: #415A77 !important;
-                border: 1px solid #778DA9 !important;
-                box-shadow: 0px 4px 10px rgba(0,0,0,0.3);
-            }
-
-            /* 5. Styling Teks User di Bawah */
-            .user-info-box {
-                background: rgba(255,255,255,0.05);
-                padding: 15px;
                 border-radius: 10px;
-                border-left: 4px solid #E0E1DD;
-                margin-top: 20px;
+                border: 1px solid transparent;
+                background-color: transparent;
+                color: #94A3B8 !important;
+                text-align: left;
+                padding: 10px 16px;
+                font-size: 14px;
+                font-weight: 400;
+                transition: all 0.2s ease;
+            }
+
+            [data-testid="stSidebar"] .stButton > button:hover {
+                background-color: rgba(148, 163, 184, 0.08) !important;
+                color: #F1F5F9 !important;
+                border-color: transparent !important;
+            }
+
+            /* Tombol aktif — emerald accent */
+            [data-testid="stSidebar"] .stButton > button[kind="primary"] {
+                background-color: rgba(16, 185, 129, 0.12) !important;
+                color: #10B981 !important;
+                border: 1px solid rgba(16, 185, 129, 0.25) !important;
+                font-weight: 500 !important;
+            }
+
+            /* ── Tombol Logout ── */
+            [data-testid="stSidebar"] .st-key-btn_logout button {
+                background-color: transparent !important;
+                color: #64748B !important;
+                border: 1px solid rgba(148, 163, 184, 0.15) !important;
+                margin-top: 8px;
+            }
+
+            [data-testid="stSidebar"] .st-key-btn_logout button:hover {
+                background-color: rgba(239, 68, 68, 0.08) !important;
+                color: #FCA5A5 !important;
+                border-color: rgba(239, 68, 68, 0.25) !important;
+            }
+
+            /* ── User info card ── */
+            .user-info-box {
+                background: rgba(16, 185, 129, 0.06);
+                padding: 14px 16px;
+                border-radius: 12px;
+                border: 1px solid rgba(16, 185, 129, 0.15);
+                margin-bottom: 12px;
+            }
+
+            /* ── Main content area ── */
+            [data-testid="stAppViewContainer"] > .main {
+                background-color: #F8FAFC;
+            }
+
+            /* Divider sidebar */
+            .sidebar-divider {
+                border: none;
+                border-top: 1px solid rgba(148, 163, 184, 0.1);
+                margin: 12px 0;
             }
         </style>
     """, unsafe_allow_html=True)
@@ -81,48 +105,91 @@ def show_main_app():
     user = st.session_state["user"]
     role = user["role"]
 
-    # --- LOGIKA OTORISASI & ICON ---
+    # --- MENU PER ROLE ---
     if role in ["Business Development", "Manager Umum & Personalia"]:
-        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Buat Tugas", "assignment_add"), ("Kelola Pengguna", "group"), ("Profil", "person")]
+        menu_items = [
+            ("Dashboard",       "dashboard"),
+            ("Tugas Saya",      "task"),
+            ("Buat Tugas",      "assignment_add"),
+            ("Kelola Pengguna", "group"),
+            ("Profil",          "person"),
+        ]
     elif role in ["Direktur Utama", "Direktur"]:
-        menu_items = [("Dashboard", "dashboard"), ("Buat Tugas", "assignment_add"), ("Monitoring", "monitoring"), ("Kelola Pengguna", "group"), ("Profil", "person")]
+        menu_items = [
+            ("Dashboard",  "dashboard"),
+            ("Buat Tugas", "assignment_add"),
+            ("Monitoring", "monitoring"),
+            ("Kelola Pengguna", "group"),
+            ("Profil",     "person"),
+        ]
     else:
-        menu_items = [("Dashboard", "dashboard"), ("Tugas Saya", "task"), ("Buat Tugas", "assignment_add"), ("Profil", "person")]
+        menu_items = [
+            ("Dashboard",  "dashboard"),
+            ("Tugas Saya", "task"),
+            ("Buat Tugas", "assignment_add"),
+            ("Profil",     "person"),
+        ]
 
-    # ✅ SIDEBAR CONTENT
+    # ── SIDEBAR ──
     with st.sidebar:
-        st.markdown("<h2 style='color:white; text-align:center;'>📋 Menu Utama</h2>", unsafe_allow_html=True)
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Loop Tombol Navigasi
+        # Header
+        st.markdown("""
+            <div style='padding: 8px 4px 16px 4px;'>
+                <p style='margin:0; font-size:11px; font-weight:600;
+                          letter-spacing:0.1em; color:#475569;'>TRACKING JOBDESC</p>
+            </div>
+        """, unsafe_allow_html=True)
+
+        # Navigasi
         for name, icon in menu_items:
             is_active = st.session_state.current_page == name
-            if st.button(name, icon=f":material/{icon}:", use_container_width=True, 
-                         type="primary" if is_active else "secondary"):
+            if st.button(
+                name,
+                icon=f":material/{icon}:",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+                key=f"nav_{name}"
+            ):
                 st.session_state.current_page = name
                 st.rerun()
 
-        # Spacer agar info user nempel di bawah
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        
-        # INFO USER (Paling Bawah)
+        # Spacer fleksibel
+        st.markdown("<div style='flex:1; min-height: 40px;'></div>", unsafe_allow_html=True)
+
+        # Divider
+        st.markdown("<hr class='sidebar-divider'>", unsafe_allow_html=True)
+
+        # User info
+        initials = "".join([w[0].upper() for w in user['nama'].split()[:2]])
         st.markdown(f"""
             <div class="user-info-box">
-                <p style='margin:0; font-size:12px; color:#778DA9;'>LOGGED IN AS</p>
-                <p style='margin:0; font-size:16px; font-weight:bold; color:white;'>{user['nama']}</p>
-                <p style='margin:0; font-size:13px; color:#E0E1DD;'>{role}</p>
+                <div style='display:flex; align-items:center; gap:10px;'>
+                    <div style='width:36px; height:36px; border-radius:50%;
+                                background: linear-gradient(135deg, #10B981, #059669);
+                                display:flex; align-items:center; justify-content:center;
+                                font-size:13px; font-weight:600; color:white; flex-shrink:0;'>
+                        {initials}
+                    </div>
+                    <div style='overflow:hidden;'>
+                        <p style='margin:0; font-size:13px; font-weight:600;
+                                  color:#F1F5F9; white-space:nowrap;
+                                  overflow:hidden; text-overflow:ellipsis;'>{user['nama']}</p>
+                        <p style='margin:0; font-size:11px; color:#64748B;
+                                  white-space:nowrap; overflow:hidden;
+                                  text-overflow:ellipsis;'>{role}</p>
+                    </div>
+                </div>
             </div>
         """, unsafe_allow_html=True)
-        
-        if st.button("Logout", icon=":material/logout:", use_container_width=True):
+
+        if st.button("Keluar", icon=":material/logout:", use_container_width=True, key="btn_logout"):
             st.session_state["user"] = None
             st.session_state.current_page = "Dashboard"
             st.rerun()
 
-    # =========================
-    # RENDER CONTENT
-    # =========================
+    # ── RENDER HALAMAN ──
     choice = st.session_state.current_page
+
     if choice == "Dashboard":
         from pages.dashboard import show_dashboard
         show_dashboard()
@@ -142,7 +209,7 @@ def show_main_app():
         from pages.manage_users import show_manage_users
         show_manage_users()
 
-# --- ROUTER ---
+# ── ROUTER ──
 if st.session_state.user is None:
     if st.session_state.auth_mode == "login":
         show_login()
