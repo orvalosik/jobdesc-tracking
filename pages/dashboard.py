@@ -85,7 +85,7 @@ def show_dashboard():
 
     # Header
     now = datetime.now()
-    greeting = "Selamat pagi" if now.hour < 12 else ("Selamat siang" if now.hour < 15 else ("Selamat sore" if now.hour < 18 else "Selamat malam"))
+    greeting = "Selamat datang"
     st.markdown(f"""
         <div class="header-card">
             <h2>Dashboard</h2>
