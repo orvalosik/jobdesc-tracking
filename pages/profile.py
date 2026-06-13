@@ -1,98 +1,133 @@
 import streamlit as st
 from database import execute_query
 
+LIST_ROLE   = ["Direktur Utama","Direktur","Promosi & CS","Business Development",
+               "Sekretaris Direksi","Manager Marketing","Manager Umum & Personalia",
+               "Manager Keuangan","Manager Teknik","Kabag. Promosi & CS",
+               "Supervisor Civil & Architectural"]
+LIST_DIVISI = ["Dewan Direksi","Promosi & CS","Business Development","Sekretaris Direksi",
+               "Marketing","Umum & Personalia","Keuangan","Teknik"]
+
+ADMIN_ROLES = ["Direktur Utama","Direktur","Manager Umum & Personalia","Business Development"]
+
 def show_profile():
-    # 🎨 Custom CSS untuk UI yang lebih dewasa & profesional
     st.markdown("""
         <style>
-        .main {
-            background-color: #f8f9fa;
+        .header-card {
+            background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+            padding: 24px 28px; border-radius: 16px; margin-bottom: 24px;
+            border: 1px solid rgba(16,185,129,0.2);
         }
-        .profile-card {
-            background: linear-gradient(135deg, #1B263B 0%, #415A77 100%);
-            padding: 25px;
-            border-radius: 15px;
-            color: white;
-            margin-bottom: 25px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        .header-card h2 { margin:0 0 4px 0; font-size:22px; font-weight:600; color:white !important; }
+        .header-card p  { margin:0; font-size:13px; color:#94A3B8 !important; }
+
+        .avatar {
+            width:64px; height:64px; border-radius:50%;
+            background:linear-gradient(135deg,#10B981,#059669);
+            display:flex; align-items:center; justify-content:center;
+            font-size:24px; font-weight:700; color:white; margin-bottom:12px;
         }
-        .stButton>button {
-            background-color: #1B263B;
-            color: white;
-            border-radius: 8px;
-            padding: 10px 24px;
-            border: none;
-            transition: 0.3s;
+        .info-chip {
+            display:inline-block; background:#F1F5F9; color:#475569;
+            padding:4px 12px; border-radius:20px;
+            font-size:12px; font-weight:500; margin:2px 0;
         }
-        .stButton>button:hover {
-            background-color: #778DA9;
-            color: white;
-            border: none;
+        section.main .stButton > button {
+            background:linear-gradient(135deg,#10B981,#059669) !important;
+            color:white !important; border:none !important;
+            font-weight:600 !important; border-radius:10px !important;
         }
+        section.main .stButton > button:hover { opacity:0.9 !important; }
         </style>
     """, unsafe_allow_html=True)
 
-    st.title("👤 Pengaturan Profil")
-    
-    # Ambil data user dari session state 
-    user = st.session_state["user"]
+    user     = st.session_state["user"]
+    is_admin = user["role"] in ADMIN_ROLES
 
-    # 🏢 Card Header
-    st.markdown(f"""
-        <div class="profile-card">
-            <h3>{user['nama']}</h3>
-            <p style='margin-bottom:0;'>Role: <b>{user['role'].upper()}</b> | Divisi: {user['divisi']}</p>
+    if "success_msg" in st.session_state:
+        st.success(st.session_state.pop("success_msg"))
+
+    initials = "".join([w[0].upper() for w in user["nama"].split()[:2]])
+
+    st.markdown("""
+        <div class="header-card">
+            <h2>Profil Saya</h2>
+            <p>Kelola informasi akun dan keamanan login Anda.</p>
         </div>
     """, unsafe_allow_html=True)
 
-    with st.container():
-        st.subheader("Informasi Personal")
-        col1, col2 = st.columns(2)
+    # ── Info card ──
+    with st.container(border=True):
+        av_col, info_col = st.columns([1, 5])
+        with av_col:
+            st.markdown(f'<div class="avatar">{initials}</div>', unsafe_allow_html=True)
+        with info_col:
+            st.markdown(f"### {user['nama']}")
+            st.markdown(f"""
+                <span class="info-chip">{user['role']}</span>
+                <span class="info-chip">{user['divisi']}</span>
+                <span class="info-chip">@{user['username']}</span>
+            """, unsafe_allow_html=True)
 
-        with col1:
-            # Pastikan semua kolom membawa value terakhir dari database 
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
+
+    # ── Form edit ──
+    with st.container(border=True):
+        st.markdown("**Edit Informasi**")
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+        c1, c2 = st.columns(2)
+        with c1:
             new_nama = st.text_input("Nama Lengkap", value=user["nama"])
-            # Username biasanya unik, kita tampilkan sebagai read-only untuk keamanan
-            st.text_input("Username", value=user["username"], disabled=True, help="Username tidak dapat diubah.")
-        
-        with col2:
-            list_divisi = ["Dewan Direksi", "Promosi & CS", "Business Development", "Sekretaris Direksi", "Marketing", "Umum & Personalia", "Keuangan", "Teknik"]
-            
-            # Cari index divisi user saat ini di dalam list
-            try:
-                current_index = list_divisi.index(user["divisi"])
-            except ValueError:
-                # Jika divisi lama tidak ada di list baru, default ke index 0
-                current_index = 0
-            
-            new_divisi = st.selectbox("Divisi", list_divisi, index=current_index)
-            new_password = st.text_input("Password Baru (Biarkan jika tidak ingin ganti)", value=user["password"], type="password")
+            st.text_input("Username", value=user["username"], disabled=True,
+                          help="Username bersifat permanen dan tidak dapat diubah.")
 
-    st.markdown("---")
-    
-# Tombol Update
-    if st.button("Simpan Perubahan"):
-        try:
-            if new_password:
-                execute_query(
-                    "UPDATE users SET nama=?, password=?, divisi=? WHERE id=?",
-                    (new_nama, new_password, new_divisi, user["id"])
-                )
+        with c2:
+            if is_admin:
+                try:   role_idx = LIST_ROLE.index(user["role"])
+                except: role_idx = 0
+                new_role = st.selectbox("Posisi / Jabatan", LIST_ROLE, index=role_idx)
+
+                try:   div_idx = LIST_DIVISI.index(user["divisi"])
+                except: div_idx = 0
+                new_divisi = st.selectbox("Divisi", LIST_DIVISI, index=div_idx)
             else:
-                execute_query(
-                    "UPDATE users SET nama=?, divisi=? WHERE id=?",
-                    (new_nama, new_divisi, user["id"])
-                )
+                st.text_input("Posisi / Jabatan", value=user["role"], disabled=True,
+                              help="Jabatan hanya dapat diubah oleh admin.")
+                st.text_input("Divisi", value=user["divisi"], disabled=True,
+                              help="Divisi hanya dapat diubah oleh admin.")
+                new_role   = user["role"]
+                new_divisi = user["divisi"]
 
-            # Update session state user agar UI langsung berubah
-            st.session_state["user"]["nama"] = new_nama
-            st.session_state["user"]["divisi"] = new_divisi
-            
-            # 2. Simpan pesan ke session state sebelum rerun
-            st.session_state["success_msg"] = "Profil berhasil diperbarui! ✅"
-            
-            # 3. Rerun untuk memperbarui seluruh tampilan UI
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f"Terjadi kesalahan: {e}")
+        st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
+        st.markdown("**Keamanan**")
+        st.caption("Biarkan kosong jika tidak ingin mengganti password.")
+
+        p1, p2 = st.columns(2)
+        with p1: new_password     = st.text_input("Password Baru", type="password", placeholder="Masukkan password baru...")
+        with p2: confirm_password = st.text_input("Konfirmasi Password", type="password", placeholder="Ulangi password baru...")
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+        if st.button(":material/save: Simpan Perubahan", use_container_width=True):
+            if new_password and new_password != confirm_password:
+                st.error("Password baru dan konfirmasi tidak cocok.")
+            else:
+                try:
+                    if new_password:
+                        execute_query(
+                            "UPDATE users SET nama=?, password=?, role=?, divisi=? WHERE id=?",
+                            (new_nama, new_password, new_role, new_divisi, user["id"])
+                        )
+                    else:
+                        execute_query(
+                            "UPDATE users SET nama=?, role=?, divisi=? WHERE id=?",
+                            (new_nama, new_role, new_divisi, user["id"])
+                        )
+                    st.session_state["user"]["nama"]   = new_nama
+                    st.session_state["user"]["role"]   = new_role
+                    st.session_state["user"]["divisi"] = new_divisi
+                    st.session_state["success_msg"]    = "Profil berhasil diperbarui!"
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Terjadi kesalahan: {e}")
