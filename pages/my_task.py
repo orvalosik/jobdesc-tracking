@@ -243,7 +243,7 @@ def show_my_task():
                 "Tanggal": h["tanggal_logbook"], "Pekerjaan": h["nama_tugas"],
                 "Kategori": h["kategori_periodik"],
                 "Keterangan": h["keterangan_progres"][:60]+"..." if len(h["keterangan_progres"])>60 else h["keterangan_progres"],
-                "Lampiran": ":material/attach_file:" if h["link_file"] else "—"
+                "Lampiran": "Link:" if h["link_file"] else "—"
             } for h in history])
             st.dataframe(df, use_container_width=True, hide_index=True)
 
