@@ -46,7 +46,10 @@ def fetch_one(query, params=()):
 def execute_query(query, params=()):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute(query, params)
+    if params:
+        cursor.execute(query, list(params))  # konversi tuple ke list
+    else:
+        cursor.execute(query)
     conn.commit()
     conn.close()
 
