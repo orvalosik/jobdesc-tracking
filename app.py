@@ -73,13 +73,16 @@ def show_main_app():
             }
             
             /* Paksa focus & active state tetap transparan emerald */
+            [data-testid="stSidebar"] .stButton > button[kind="primary"],
             [data-testid="stSidebar"] .stButton > button[kind="primary"]:focus,
             [data-testid="stSidebar"] .stButton > button[kind="primary"]:active,
+            [data-testid="stSidebar"] .stButton > button[kind="primary"]:focus-visible,
             [data-testid="stSidebar"] .stButton > button[kind="primary"]:focus:not(:active) {
                 background-color: rgba(16, 185, 129, 0.12) !important;
                 border: 1px solid rgba(16, 185, 129, 0.25) !important;
                 color: #10B981 !important;
                 box-shadow: none !important;
+                outline: none !important;
             }
 
             /* ── Tombol Logout ── */
