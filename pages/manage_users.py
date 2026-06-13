@@ -183,11 +183,14 @@ def render_user_list():
                     st.error("Tidak bisa menghapus akun sendiri.")
                 else:
                     uid = u["id"]
+                    execute_query("DELETE FROM feedback WHERE written_by=?", (uid,))
                     execute_query("DELETE FROM feedback WHERE submission_id IN (SELECT id FROM submissions WHERE task_id IN (SELECT id FROM tasks WHERE assigned_to=? OR assigned_by=?))", (uid, uid))
                     execute_query("DELETE FROM submissions WHERE task_id IN (SELECT id FROM tasks WHERE assigned_to=? OR assigned_by=?)", (uid, uid))
                     execute_query("DELETE FROM deadline_history WHERE task_id IN (SELECT id FROM tasks WHERE assigned_to=? OR assigned_by=?) OR changed_by=?", (uid, uid, uid))
                     execute_query("DELETE FROM tasks WHERE assigned_to=? OR assigned_by=?", (uid, uid))
                     execute_query("DELETE FROM routine_logbooks WHERE user_id=?", (uid,))
+                    execute_query("DELETE FROM jobdesc_templates WHERE assigned_by_id=? OR created_by_staff_id=?", (uid, uid))
+                    execute_query("UPDATE users SET atasan_id=NULL WHERE atasan_id=?", (uid,))
                     execute_query("DELETE FROM users WHERE id=?", (uid,))
                     st.session_state["manage_msg"] = f"Akun {u['nama']} berhasil dihapus."
                     st.rerun()
