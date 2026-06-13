@@ -183,7 +183,6 @@ def render_user_list():
                     st.error("Tidak bisa menghapus akun sendiri.")
                 else:
                     uid = u["id"]
-                    execute_query("DELETE FROM feedback WHERE written_by=?", (uid,))
                     execute_query("DELETE FROM feedback WHERE submission_id IN (SELECT id FROM submissions WHERE task_id IN (SELECT id FROM tasks WHERE assigned_to=? OR assigned_by=?))", (uid, uid))
                     execute_query("DELETE FROM submissions WHERE task_id IN (SELECT id FROM tasks WHERE assigned_to=? OR assigned_by=?)", (uid, uid))
                     execute_query("DELETE FROM deadline_history WHERE task_id IN (SELECT id FROM tasks WHERE assigned_to=? OR assigned_by=?) OR changed_by=?", (uid, uid, uid))
