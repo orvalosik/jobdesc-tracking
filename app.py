@@ -131,6 +131,7 @@ def show_main_app():
             ("Dashboard",       "dashboard"),
             ("Tugas Saya",      "task"),
             ("Buat Tugas",      "assignment_add"),
+            ("Monitoring", "monitoring"),
             ("Kelola Pengguna", "group"),
             ("Profil",          "person"),
         ]
