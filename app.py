@@ -142,11 +142,17 @@ def show_main_app():
             ("Kelola Pengguna", "group"),
             ("Profil",     "person"),
         ]
-    else:
+    elif "Manager" in role:
         menu_items = [
             ("Dashboard",  "dashboard"),
             ("Tugas Saya", "task"),
             ("Buat Tugas", "assignment_add"),
+            ("Profil",     "person"),
+        ]
+    else:
+        menu_items = [
+            ("Dashboard",  "dashboard"),
+            ("Tugas Saya", "task"),
             ("Profil",     "person"),
         ]
 
