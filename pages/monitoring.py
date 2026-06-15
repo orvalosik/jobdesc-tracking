@@ -1,6 +1,6 @@
 import streamlit as st
 from database import fetch_all, fetch_one, execute_query
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 def show_monitoring():
     st.markdown("""
@@ -145,21 +145,47 @@ def render_list(user, only_approved=False):
     else:
         tasks = [t for t in tasks if t["status_task"].lower() != "approved"]
 
-    # Filter UI
+    # ── Filter UI ──
     with st.container(border=True):
-        f1, f2, f3 = st.columns(3)
-        with f1:
-            divisi_opts = ["Semua Divisi"] + sorted(set(t["divisi_karyawan"] for t in tasks if t["divisi_karyawan"]))
-            sel_div = st.selectbox("Divisi", divisi_opts, key=f"f_div_{'ap' if only_approved else 'act'}")
-            stage1  = [t for t in tasks if t["divisi_karyawan"] == sel_div] if sel_div != "Semua Divisi" else tasks
-        with f2:
-            posisi_opts = ["Semua Posisi"] + sorted(set(t["role_karyawan"] for t in stage1 if t["role_karyawan"]))
-            sel_pos = st.selectbox("Posisi", posisi_opts, key=f"f_pos_{'ap' if only_approved else 'act'}")
-            stage2  = [t for t in stage1 if t["role_karyawan"] == sel_pos] if sel_pos != "Semua Posisi" else stage1
-        with f3:
-            nama_opts = ["Semua Karyawan"] + sorted(set(t["nama_karyawan"] for t in stage2 if t["nama_karyawan"]))
-            sel_nama  = st.selectbox("Karyawan", nama_opts, key=f"f_nama_{'ap' if only_approved else 'act'}")
-            final     = [t for t in stage2 if t["nama_karyawan"] == sel_nama] if sel_nama != "Semua Karyawan" else stage2
+        if not only_approved:
+            f1, f2, f3 = st.columns(3)
+            with f1:
+                divisi_opts = ["Semua Divisi"] + sorted(set(t["divisi_karyawan"] for t in tasks if t["divisi_karyawan"]))
+                sel_div = st.selectbox("Divisi", divisi_opts, key="f_div_act")
+                stage1  = [t for t in tasks if t["divisi_karyawan"] == sel_div] if sel_div != "Semua Divisi" else tasks
+            with f2:
+                posisi_opts = ["Semua Posisi"] + sorted(set(t["role_karyawan"] for t in stage1 if t["role_karyawan"]))
+                sel_pos = st.selectbox("Posisi", posisi_opts, key="f_pos_act")
+                stage2  = [t for t in stage1 if t["role_karyawan"] == sel_pos] if sel_pos != "Semua Posisi" else stage1
+            with f3:
+                nama_opts = ["Semua Karyawan"] + sorted(set(t["nama_karyawan"] for t in stage2 if t["nama_karyawan"]))
+                sel_nama  = st.selectbox("Karyawan", nama_opts, key="f_nama_act")
+                final     = [t for t in stage2 if t["nama_karyawan"] == sel_nama] if sel_nama != "Semua Karyawan" else stage2
+        else:
+            # Tab Selesai & Disetujui: Divisi, Rentang Tanggal Assign, Karyawan
+            f1, f2, f3 = st.columns(3)
+            with f1:
+                divisi_opts = ["Semua Divisi"] + sorted(set(t["divisi_karyawan"] for t in tasks if t["divisi_karyawan"]))
+                sel_div = st.selectbox("Divisi", divisi_opts, key="f_div_ap")
+                stage1  = [t for t in tasks if t["divisi_karyawan"] == sel_div] if sel_div != "Semua Divisi" else tasks
+            with f2:
+                start_ap, end_ap = st.columns(2)
+                with start_ap:
+                    sel_start = st.date_input("Dari Tanggal", value=date.today() - timedelta(days=30), key="f_start_ap")
+                with end_ap:
+                    sel_end = st.date_input("Sampai Tanggal", value=date.today(), key="f_end_ap")
+
+                stage2 = []
+                for t in stage1:
+                    try:
+                        td = datetime.strptime(t["tanggal_assign"][:10], "%Y-%m-%d").date()
+                        if sel_start <= td <= sel_end:
+                            stage2.append(t)
+                    except: continue
+            with f3:
+                nama_opts = ["Semua Karyawan"] + sorted(set(t["nama_karyawan"] for t in stage2 if t["nama_karyawan"]))
+                sel_nama  = st.selectbox("Karyawan", nama_opts, key="f_nama_ap")
+                final     = [t for t in stage2 if t["nama_karyawan"] == sel_nama] if sel_nama != "Semua Karyawan" else stage2
 
     if not final:
         st.warning("Tidak ada tugas yang cocok dengan filter.")
@@ -167,7 +193,6 @@ def render_list(user, only_approved=False):
 
     st.markdown(f"<p style='font-size:13px;color:#64748B;margin:12px 0 8px 0'>{len(final)} tugas ditemukan</p>", unsafe_allow_html=True)
 
-    # Header kolom
     badge_map = {
         "assigned":  "badge-assigned",
         "submitted": "badge-submitted",
@@ -179,7 +204,6 @@ def render_list(user, only_approved=False):
         status    = t["status_task"].lower()
         badge_cls = badge_map.get(status, "badge-assigned")
         can_act   = not (user["role"] == "Sekretaris Direksi" and t["divisi_karyawan"] != user["divisi"])
-        row_cls   = "task-row-approved" if only_approved else "task-row"
 
         c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2])
         with c1:
