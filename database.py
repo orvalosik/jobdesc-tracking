@@ -1,58 +1,52 @@
 import libsql
 import streamlit as st
 
-# BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# DB_NAME = os.path.join(BASE_DIR, "tracking.db")
-
+# =========================================================================
+# KONEKSI — DI-CACHE SUPAYA TIDAK BUKA KONEKSI BARU SETIAP QUERY
+# =========================================================================
+@st.cache_resource
 def get_connection():
+    """
+    Koneksi ke Turso di-cache sebagai resource.
+    Streamlit akan reuse koneksi yang sama selama session berjalan,
+    bukan buka-tutup koneksi baru di setiap fetch_all/fetch_one/execute_query.
+    """
     return libsql.connect(
         database=st.secrets["TURSO_DATABASE_URL"],
         auth_token=st.secrets["TURSO_AUTH_TOKEN"]
     )
 
+
 def fetch_all(query, params=()):
     conn = get_connection()
     cursor = conn.cursor()
-
-    cursor.execute(query, params)
-
+    cursor.execute(query, list(params) if params else [])
     rows = cursor.fetchall()
-
     columns = [desc[0] for desc in cursor.description]
+    return [dict(zip(columns, row)) for row in rows]
 
-    result = [
-        dict(zip(columns, row))
-        for row in rows
-    ]
-
-    conn.close()
-    return result
 
 def fetch_one(query, params=()):
     conn = get_connection()
     cursor = conn.cursor()
-
-    cursor.execute(query, params)
-
+    cursor.execute(query, list(params) if params else [])
     row = cursor.fetchone()
-
     if row:
         columns = [desc[0] for desc in cursor.description]
         row = dict(zip(columns, row))
-
-    conn.close()
     return row
+
 
 def execute_query(query, params=()):
     conn = get_connection()
     cursor = conn.cursor()
-    if params:
-        cursor.execute(query, list(params))  # konversi tuple ke list
-    else:
-        cursor.execute(query)
+    cursor.execute(query, list(params) if params else [])
     conn.commit()
-    conn.close()
 
+
+# =========================================================================
+# INIT DB
+# =========================================================================
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
@@ -71,7 +65,7 @@ def init_db():
     )
     """)
 
-    # 2. TABEL TASKS (TUGAS NON-RUTIN / PROYEK KHUSUS)
+    # 2. TABEL TASKS
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,7 +104,7 @@ def init_db():
     )
     """)
 
-    # 5. TABEL JOBDESC / MASTER TUGAS RUTIN
+    # 5. TABEL JOBDESC TEMPLATES
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS jobdesc_templates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -125,7 +119,7 @@ def init_db():
     )
     """)
 
-    # 6. TABEL LOGBOOK RUTIN (Sudah ditambahkan tanggal_logbook)
+    # 6. TABEL ROUTINE LOGBOOKS
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS routine_logbooks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,33 +147,9 @@ def init_db():
         FOREIGN KEY (changed_by) REFERENCES users(id)
     )
     """)
-    
-    # ========================================================
-    # SINKRONISASI ALTER TABEL AMAN
-    # ========================================================
-    
-    # Cek & Sinkronisasi tabel jobdesc_templates
-    cursor.execute("PRAGMA table_info(jobdesc_templates)")
-    template_columns = [col[1] for col in cursor.fetchall()]
-
-    if "role" not in template_columns:
-        cursor.execute("ALTER TABLE jobdesc_templates ADD COLUMN role TEXT")
-
-    # Cek & Sinkronisasi tabel routine_logbooks 
-    cursor.execute("PRAGMA table_info(routine_logbooks)")
-    logbook_columns = [col[1] for col in cursor.fetchall()]
-
-    if "tanggal_logbook" not in logbook_columns:
-        cursor.execute("ALTER TABLE routine_logbooks ADD COLUMN tanggal_logbook TEXT")
-        
-    # Cek & Sinkronisasi tabel submissions
-    cursor.execute("PRAGMA table_info(submissions)")
-    submission_columns = [col[1] for col in cursor.fetchall()]
-    if "keterangan" not in submission_columns:
-        cursor.execute("ALTER TABLE submissions ADD COLUMN keterangan TEXT")
 
     conn.commit()
-    conn.close()
+
 
 if __name__ == "__main__":
     init_db()
