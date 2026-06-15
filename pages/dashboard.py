@@ -2,12 +2,75 @@ import streamlit as st
 from database import fetch_all
 from datetime import datetime, date
 import plotly.graph_objects as go
-import plotly.express as px
+
+
+# =========================================================================
+# QUERY YANG DI-CACHE
+# =========================================================================
+@st.cache_data(ttl=20)
+def get_users_under(user_id):
+    return fetch_all("SELECT id, nama, role FROM users WHERE atasan_id = ? ORDER BY role, nama", (user_id,))
+
+@st.cache_data(ttl=20)
+def get_all_users():
+    return fetch_all("SELECT id, nama, role FROM users ORDER BY role, nama")
+
+@st.cache_data(ttl=15)
+def get_tasks_for(cakupan, user_id, divisi, is_direksi):
+    if cakupan == "Tugas Saya":
+        return fetch_all(
+            "SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE t.assigned_to = ?",
+            (user_id,)
+        )
+    elif is_direksi:
+        return fetch_all(
+            "SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id"
+        )
+    else:
+        return fetch_all(
+            "SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE u.atasan_id = ?",
+            (user_id,)
+        )
+
+@st.cache_data(ttl=15)
+def get_all_submissions_map():
+    """Ambil SEMUA submissions sekali, lalu group per task_id di Python.
+    Menghindari 1 query per task."""
+    rows = fetch_all("SELECT task_id, tanggal_submit FROM submissions ORDER BY tanggal_submit ASC")
+    result = {}
+    for r in rows:
+        result.setdefault(r["task_id"], []).append(r)
+    return result
+
+@st.cache_data(ttl=15)
+def get_all_deadline_history_map():
+    rows = fetch_all("SELECT task_id, new_deadline, changed_at FROM deadline_history ORDER BY changed_at ASC")
+    result = {}
+    for r in rows:
+        result.setdefault(r["task_id"], []).append(r)
+    return result
+
+@st.cache_data(ttl=15)
+def get_logs_for(cakupan, user_id, is_direksi):
+    if cakupan == "Tugas Saya":
+        return fetch_all(
+            "SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id WHERE rl.user_id = ?",
+            (user_id,)
+        )
+    elif is_direksi:
+        return fetch_all(
+            "SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id"
+        )
+    else:
+        return fetch_all(
+            "SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id WHERE u.atasan_id = ?",
+            (user_id,)
+        )
+
 
 def show_dashboard():
     st.markdown("""
         <style>
-        /* Header card */
         .header-card {
             background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
             padding: 24px 28px;
@@ -16,63 +79,27 @@ def show_dashboard():
             margin-bottom: 24px;
             border: 1px solid rgba(16, 185, 129, 0.2);
         }
-        .header-card h2 {
-            margin: 0 0 4px 0;
-            font-size: 22px;
-            font-weight: 600;
-            color: white !important;
-        }
-        .header-card p {
-            margin: 0;
-            font-size: 13px;
-            color: #94A3B8 !important;
-        }
+        .header-card h2 { margin: 0 0 4px 0; font-size: 22px; font-weight: 600; color: white !important; }
+        .header-card p  { margin: 0; font-size: 13px; color: #94A3B8 !important; }
 
-        /* Metric cards */
         [data-testid="stMetric"] {
-            background: white;
-            border: 1px solid #E2E8F0;
-            border-radius: 14px;
-            padding: 16px 20px;
+            background: white; border: 1px solid #E2E8F0; border-radius: 14px; padding: 16px 20px;
         }
         [data-testid="stMetricLabel"] { font-size: 12px !important; color: #64748B !important; }
         [data-testid="stMetricValue"] { font-size: 26px !important; color: #1E293B !important; font-weight: 700 !important; }
 
-        /* Status badge */
-        .status-badge {
-            display: inline-block;
-            padding: 3px 10px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-        }
+        .status-badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
         .badge-assigned  { background:#EFF6FF; color:#1D4ED8; }
         .badge-submitted { background:#FFF7ED; color:#C2410C; }
         .badge-revision  { background:#FEF9C3; color:#A16207; }
         .badge-approved  { background:#DCFCE7; color:#15803D; }
 
-        /* Filter container */
-        [data-testid="stVerticalBlockBorderWrapper"] {
-            border-radius: 12px !important;
-            border-color: #E2E8F0 !important;
-        }
+        [data-testid="stVerticalBlockBorderWrapper"] { border-radius: 12px !important; border-color: #E2E8F0 !important; }
 
-        /* Tab styling */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 4px;
-            background: #F1F5F9;
-            padding: 4px;
-            border-radius: 10px;
-        }
-        .stTabs [data-baseweb="tab"] {
-            border-radius: 8px;
-            padding: 6px 18px;
-            font-size: 13px;
-        }
+        .stTabs [data-baseweb="tab-list"] { gap: 4px; background: #F1F5F9; padding: 4px; border-radius: 10px; }
+        .stTabs [data-baseweb="tab"] { border-radius: 8px; padding: 6px 18px; font-size: 13px; }
         .stTabs [aria-selected="true"] {
-            background: white !important;
-            font-weight: 600 !important;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+            background: white !important; font-weight: 600 !important; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
         }
         </style>
     """, unsafe_allow_html=True)
@@ -82,18 +109,17 @@ def show_dashboard():
         st.stop()
 
     user = st.session_state["user"]
+    is_direksi = user["divisi"] == "Dewan Direksi"
 
-    # Header
     now = datetime.now()
-    greeting = "Selamat datang"
     st.markdown(f"""
         <div class="header-card">
             <h2>Dashboard</h2>
-            <p>{greeting}, <strong style="color:#10B981;">{user['nama']}</strong> — {now.strftime('%A, %d %B %Y')}</p>
+            <p>Selamat datang, <strong style="color:#10B981;">{user['nama']}</strong> — {now.strftime('%A, %d %B %Y')}</p>
         </div>
     """, unsafe_allow_html=True)
 
-    cakupan = "Tugas Tim" if user["divisi"] == "Dewan Direksi" else "Tugas Saya"
+    cakupan = "Tugas Tim" if is_direksi else "Tugas Saya"
 
     tab_non_rutin, tab_rutin = st.tabs([
         "Non-Rutinitas (Instruksi)",
@@ -120,10 +146,10 @@ def show_dashboard():
                 st.markdown("<br>", unsafe_allow_html=True)
                 f1, f2 = st.columns(2)
                 with f1:
-                    if user["divisi"] == "Dewan Direksi":
-                        db_users = fetch_all("SELECT id, nama, role FROM users ORDER BY role, nama")
+                    if is_direksi:
+                        db_users = get_all_users()
                     else:
-                        db_users = fetch_all("SELECT id, nama, role FROM users WHERE atasan_id = ? ORDER BY role, nama", (user["id"],))
+                        db_users = get_users_under(user["id"])
 
                     karyawan_options = ["Semua"]
                     for u in db_users:
@@ -134,20 +160,15 @@ def show_dashboard():
                     sel_karyawan = st.selectbox(":material/person: Karyawan", karyawan_options, key="karyawan_task")
 
                 with f2:
-                    if user["divisi"] == "Dewan Direksi":
+                    if is_direksi:
                         divisi_list = ["Semua","Promosi & CS","Business Development","Sekretaris Direksi","Marketing","Umum & Personalia","Keuangan","Teknik"]
                         sel_divisi = st.selectbox(":material/apartment: Divisi", divisi_list, key="div_task")
                     else:
                         st.info(f"Divisi dipantau: **{user['divisi']}**")
                         sel_divisi = user["divisi"]
 
-        # Fetch & filter tasks
-        if cakupan == "Tugas Saya":
-            raw_tasks = fetch_all("SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE t.assigned_to = ?", (user["id"],))
-        elif user["divisi"] == "Dewan Direksi":
-            raw_tasks = fetch_all("SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id")
-        else:
-            raw_tasks = fetch_all("SELECT t.*, u.divisi, u.role, u.nama as nama_karyawan FROM tasks t JOIN users u ON t.assigned_to = u.id WHERE u.atasan_id = ?", (user["id"],))
+        # Fetch tasks (cached)
+        raw_tasks = get_tasks_for(cakupan, user["id"], user["divisi"], is_direksi)
 
         tasks = []
         for t in raw_tasks:
@@ -166,6 +187,10 @@ def show_dashboard():
             st.markdown("<br>", unsafe_allow_html=True)
             st.info(":material/search_off: Tidak ada data tugas untuk kriteria ini.")
         else:
+            # Ambil semua submission & deadline history SEKALI (bukan per-task)
+            subs_map = get_all_submissions_map()
+            dlhist_map = get_all_deadline_history_map()
+
             completed     = [t for t in tasks if t["status_task"].lower() == "approved"]
             not_completed = len(tasks) - len(completed)
             today         = date.today()
@@ -183,8 +208,8 @@ def show_dashboard():
                     elif nama_k not in approved_per_karyawan:
                         approved_per_karyawan[nama_k] = 0
 
-                    subs       = fetch_all("SELECT tanggal_submit FROM submissions WHERE task_id = ? ORDER BY tanggal_submit ASC", (task_id,))
-                    dl_history = fetch_all("SELECT new_deadline, changed_at FROM deadline_history WHERE task_id = ? ORDER BY changed_at ASC", (task_id,))
+                    subs       = subs_map.get(task_id, [])
+                    dl_history = dlhist_map.get(task_id, [])
 
                     if subs:
                         submit_date     = datetime.strptime(subs[0]["tanggal_submit"].split(" ")[0], "%Y-%m-%d").date()
@@ -202,7 +227,6 @@ def show_dashboard():
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # ── Metrik ──
             m1, m2, m3, m4 = st.columns(4)
             m1.metric(":material/assignment: Total Tugas", len(tasks))
             m2.metric(":material/check_circle: Approved", len(completed))
@@ -211,7 +235,6 @@ def show_dashboard():
 
             st.markdown("<br>", unsafe_allow_html=True)
 
-            # ── Chart baris 1 ──
             ch1, ch2 = st.columns(2)
 
             with ch1:
@@ -221,26 +244,19 @@ def show_dashboard():
                 colors = ["#10B981", "#E2E8F0"]
 
                 fig_donut = go.Figure(go.Pie(
-                    labels=labels,
-                    values=values,
-                    hole=0.65,
+                    labels=labels, values=values, hole=0.65,
                     marker=dict(colors=colors, line=dict(color="white", width=2)),
-                    textinfo="percent",
-                    textfont=dict(size=13),
+                    textinfo="percent", textfont=dict(size=13),
                     hovertemplate="%{label}: %{value} tugas<extra></extra>"
                 ))
                 fig_donut.add_annotation(
                     text=f"<b>{len(completed)}</b><br><span style='font-size:11px'>Approved</span>",
-                    x=0.5, y=0.5, showarrow=False, font=dict(size=16, color="#1E293B"),
-                    align="center"
+                    x=0.5, y=0.5, showarrow=False, font=dict(size=16, color="#1E293B"), align="center"
                 )
                 fig_donut.update_layout(
-                    margin=dict(t=10, b=10, l=10, r=10),
-                    height=260,
-                    showlegend=True,
+                    margin=dict(t=10, b=10, l=10, r=10), height=260, showlegend=True,
                     legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center", font=dict(size=12)),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)"
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
                 )
                 st.plotly_chart(fig_donut, use_container_width=True)
 
@@ -251,25 +267,19 @@ def show_dashboard():
                 status_values = [len([t for t in tasks if t["status_task"].lower() == s.lower()]) for s in status_labels]
 
                 fig_bar = go.Figure(go.Bar(
-                    x=status_labels,
-                    y=status_values,
+                    x=status_labels, y=status_values,
                     marker=dict(color=status_colors, line=dict(color="white", width=1)),
-                    text=status_values,
-                    textposition="outside",
+                    text=status_values, textposition="outside",
                     hovertemplate="%{x}: %{y} tugas<extra></extra>"
                 ))
                 fig_bar.update_layout(
-                    margin=dict(t=10, b=10, l=10, r=10),
-                    height=260,
+                    margin=dict(t=10, b=10, l=10, r=10), height=260,
                     yaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
                     xaxis=dict(showgrid=False),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)",
-                    bargap=0.35
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", bargap=0.35
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
 
-            # ── Chart approved per karyawan ──
             if cakupan == "Tugas Tim" and approved_per_karyawan:
                 st.markdown("**Tugas Approved per Anggota Tim**")
                 sorted_items  = sorted(approved_per_karyawan.items(), key=lambda x: x[1], reverse=True)
@@ -277,16 +287,9 @@ def show_dashboard():
                 values_sorted = [i[1] for i in sorted_items]
 
                 fig_team = go.Figure(go.Bar(
-                    y=names_sorted,
-                    x=values_sorted,
-                    orientation="h",
-                    marker=dict(
-                        color=values_sorted,
-                        colorscale=[[0, "#D1FAE5"], [1, "#059669"]],
-                        line=dict(color="white", width=1)
-                    ),
-                    text=values_sorted,
-                    textposition="outside",
+                    y=names_sorted, x=values_sorted, orientation="h",
+                    marker=dict(color=values_sorted, colorscale=[[0, "#D1FAE5"], [1, "#059669"]], line=dict(color="white", width=1)),
+                    text=values_sorted, textposition="outside",
                     hovertemplate="%{y}: %{x} tugas approved<extra></extra>"
                 ))
                 fig_team.update_layout(
@@ -294,8 +297,7 @@ def show_dashboard():
                     height=max(200, len(names_sorted) * 44),
                     xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
                     yaxis=dict(showgrid=False, autorange="reversed"),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)"
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
                 )
                 st.plotly_chart(fig_team, use_container_width=True)
 
@@ -314,20 +316,14 @@ def show_dashboard():
             sel_div_log = "Semua"
             if cakupan == "Tugas Tim":
                 st.markdown("<br>", unsafe_allow_html=True)
-                if user["divisi"] == "Dewan Direksi":
+                if is_direksi:
                     divisi_list_log = ["Semua","Promosi & CS","Business Development","Sekretaris Direksi","Marketing","Umum & Personalia","Keuangan","Teknik"]
                     sel_div_log = st.selectbox(":material/apartment: Divisi", divisi_list_log, key="div_log")
                 else:
                     st.info(f"Memantau logbook divisi: **{user['divisi']}**")
                     sel_div_log = user["divisi"]
 
-        # Fetch & filter logbook
-        if cakupan == "Tugas Saya":
-            raw_logs = fetch_all("SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id WHERE rl.user_id = ?", (user["id"],))
-        elif user["divisi"] == "Dewan Direksi":
-            raw_logs = fetch_all("SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id")
-        else:
-            raw_logs = fetch_all("SELECT rl.*, jt.nama_tugas, u.nama, u.divisi FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id = jt.id JOIN users u ON rl.user_id = u.id WHERE u.atasan_id = ?", (user["id"],))
+        raw_logs = get_logs_for(cakupan, user["id"], is_direksi)
 
         valid_logs = []
         for log in raw_logs:
@@ -374,15 +370,9 @@ def show_dashboard():
                 labels_clean = [c if len(c) <= 22 else c[:20]+"…" for c in cats]
 
                 fig_hbar = go.Figure(go.Bar(
-                    y=labels_clean,
-                    x=cnts,
-                    orientation="h",
-                    marker=dict(
-                        color=cnts,
-                        colorscale=[[0, "#D1FAE5"], [1, "#059669"]],
-                    ),
-                    text=cnts,
-                    textposition="outside",
+                    y=labels_clean, x=cnts, orientation="h",
+                    marker=dict(color=cnts, colorscale=[[0, "#D1FAE5"], [1, "#059669"]]),
+                    text=cnts, textposition="outside",
                     hovertemplate="%{y}: %{x} aktivitas<extra></extra>"
                 ))
                 fig_hbar.update_layout(
@@ -390,8 +380,7 @@ def show_dashboard():
                     height=max(200, len(cats) * 40),
                     xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
                     yaxis=dict(showgrid=False, autorange="reversed"),
-                    paper_bgcolor="rgba(0,0,0,0)",
-                    plot_bgcolor="rgba(0,0,0,0)"
+                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
                 )
                 st.plotly_chart(fig_hbar, use_container_width=True)
 
@@ -402,15 +391,9 @@ def show_dashboard():
                     vals  = list(karyawan_counts.values())
 
                     fig_ul = go.Figure(go.Bar(
-                        y=names,
-                        x=vals,
-                        orientation="h",
-                        marker=dict(
-                            color=vals,
-                            colorscale=[[0, "#FED7AA"], [1, "#EA580C"]],
-                        ),
-                        text=vals,
-                        textposition="outside",
+                        y=names, x=vals, orientation="h",
+                        marker=dict(color=vals, colorscale=[[0, "#FED7AA"], [1, "#EA580C"]]),
+                        text=vals, textposition="outside",
                         hovertemplate="%{y}: %{x} laporan<extra></extra>"
                     ))
                     fig_ul.update_layout(
@@ -418,8 +401,7 @@ def show_dashboard():
                         height=max(200, len(names) * 40),
                         xaxis=dict(showgrid=True, gridcolor="#F1F5F9", zeroline=False),
                         yaxis=dict(showgrid=False, autorange="reversed"),
-                        paper_bgcolor="rgba(0,0,0,0)",
-                        plot_bgcolor="rgba(0,0,0,0)"
+                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)"
                     )
                     st.plotly_chart(fig_ul, use_container_width=True)
                 else:
