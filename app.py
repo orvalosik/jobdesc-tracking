@@ -142,7 +142,8 @@ def show_main_app():
             ("Kelola Pengguna", "group"),
             ("Profil",     "person"),
         ]
-    elif "Manager" in role:
+    elif role in ["Promosi & CS", "Sekretaris Direksi", "Manager Marketing", 
+                "Manager Keuangan", "Manager Teknik"]:
         menu_items = [
             ("Dashboard",  "dashboard"),
             ("Tugas Saya", "task"),
