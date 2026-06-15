@@ -148,6 +148,7 @@ def show_main_app():
             ("Dashboard",  "dashboard"),
             ("Tugas Saya", "task"),
             ("Buat Tugas", "assignment_add"),
+            ("Monitoring", "monitoring"),
             ("Profil",     "person"),
         ]
     else:
