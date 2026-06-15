@@ -2,16 +2,20 @@ import streamlit as st
 import pandas as pd
 from database import fetch_all, execute_query
 from datetime import datetime, date, timedelta
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-import io
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 
 # =========================================================================
 # UPLOAD KE GOOGLE DRIVE
+# Import google api libraries LAZY (di dalam fungsi) supaya tidak
+# membebani waktu render setiap halaman dibuka — hanya di-import
+# saat user benar-benar melakukan upload.
 # =========================================================================
 def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+    import io
+    from google.oauth2.credentials import Credentials
+    from google.auth.transport.requests import Request
+
     ROOT_FOLDER_ID = "11sU-BVtM-VLhKPKYChDyXwgeaHcWG0xg"
     try:
         SCOPES = ["https://www.googleapis.com/auth/drive.file"]
@@ -54,6 +58,54 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
     except Exception as e:
         st.error(f"Gagal mengunggah berkas ke Google Drive: {e}")
         return None
+
+
+# =========================================================================
+# QUERY YANG DI-CACHE
+# TTL singkat (15-30s) supaya data tidak terasa basi tapi query
+# tidak diulang setiap re-run / pindah tab.
+# =========================================================================
+@st.cache_data(ttl=30)
+def get_jobdesc_templates(role, divisi, kategori):
+    return fetch_all(
+        "SELECT id, nama_tugas FROM jobdesc_templates WHERE role=? AND divisi=? AND kategori_periodik=? ORDER BY nama_tugas",
+        (role, divisi, kategori)
+    )
+
+@st.cache_data(ttl=30)
+def get_logbook_job_list(user_id):
+    return fetch_all(
+        "SELECT DISTINCT jt.nama_tugas FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id WHERE rl.user_id=?",
+        (user_id,)
+    )
+
+@st.cache_data(ttl=15)
+def get_logbook_history(user_id):
+    return fetch_all("""
+        SELECT rl.id, rl.tanggal_logbook, rl.keterangan_progres, rl.link_file,
+               rl.tanggal_input, jt.nama_tugas, jt.kategori_periodik
+        FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id
+        WHERE rl.user_id=? ORDER BY rl.tanggal_logbook DESC, rl.tanggal_input DESC
+    """, (user_id,))
+
+@st.cache_data(ttl=15)
+def get_assigned_tasks(user_id):
+    return fetch_all(
+        "SELECT t.*, u.nama as nama_atasan FROM tasks t JOIN users u ON t.assigned_by=u.id WHERE t.assigned_to=? ORDER BY t.id DESC",
+        (user_id,)
+    )
+
+@st.cache_data(ttl=10)
+def get_latest_submission(task_id):
+    res = fetch_all("SELECT * FROM submissions WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,))
+    return res[0] if res else None
+
+@st.cache_data(ttl=10)
+def get_latest_feedback(task_id):
+    return fetch_all(
+        "SELECT komentar, tanggal_ditulis FROM feedback WHERE submission_id IN (SELECT id FROM submissions WHERE task_id=?) ORDER BY id DESC LIMIT 1",
+        (task_id,)
+    )
 
 
 # =========================================================================
@@ -172,10 +224,7 @@ def show_my_task():
         with col_kat:
             kategori_periodik = st.selectbox("Kategori Periodik", ["Harian", "Bulanan", "Tahunan"], key="input_kategori_periodik")
 
-        templates = fetch_all(
-            "SELECT id, nama_tugas FROM jobdesc_templates WHERE role=? AND divisi=? AND kategori_periodik=? ORDER BY nama_tugas",
-            (user["role"], user["divisi"], kategori_periodik)
-        )
+        templates = get_jobdesc_templates(user["role"], user["divisi"], kategori_periodik)
         template_options = {t["nama_tugas"]: t["id"] for t in templates}
 
         with col_job:
@@ -202,6 +251,9 @@ def show_my_task():
                             "INSERT INTO routine_logbooks (user_id, tanggal_logbook, jobdesc_id, keterangan_progres, link_file, tanggal_input) VALUES (?,?,?,?,?,?)",
                             (user["id"], str(tgl_logbook), jobdesc_id, keterangan, final_link, now_ts)
                         )
+                        # Bersihkan cache yang relevan supaya riwayat langsung update
+                        get_logbook_history.clear()
+                        get_logbook_job_list.clear()
                         st.success(f"Logbook {kategori_periodik.lower()} berhasil disimpan!")
                         st.rerun()
 
@@ -209,7 +261,7 @@ def show_my_task():
         st.markdown("<hr style='border-color:#E2E8F0; margin:20px 0'>", unsafe_allow_html=True)
         st.markdown('<p style="font-size:15px;font-weight:600;color:#1E293B;margin-bottom:12px;">Riwayat Logbook</p>', unsafe_allow_html=True)
 
-        job_list = fetch_all("SELECT DISTINCT jt.nama_tugas FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id WHERE rl.user_id=?", (user["id"],))
+        job_list = get_logbook_job_list(user["id"])
         job_opts = ["Semua Pekerjaan"] + [j["nama_tugas"] for j in job_list]
 
         lc1, lc2, lc3 = st.columns([1.2, 1, 1])
@@ -217,12 +269,7 @@ def show_my_task():
         with lc2: start_lb   = st.date_input("Dari Tanggal", value=date.today()-timedelta(days=30), key="start_date_lb")
         with lc3: end_lb     = st.date_input("Sampai Tanggal", value=date.today(), key="end_date_lb")
 
-        history = fetch_all("""
-            SELECT rl.id, rl.tanggal_logbook, rl.keterangan_progres, rl.link_file,
-                   rl.tanggal_input, jt.nama_tugas, jt.kategori_periodik
-            FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id
-            WHERE rl.user_id=? ORDER BY rl.tanggal_logbook DESC, rl.tanggal_input DESC
-        """, (user["id"],))
+        history = get_logbook_history(user["id"])
 
         if history:
             if filter_job != "Semua Pekerjaan":
@@ -243,7 +290,7 @@ def show_my_task():
                 "Tanggal": h["tanggal_logbook"], "Pekerjaan": h["nama_tugas"],
                 "Kategori": h["kategori_periodik"],
                 "Keterangan": h["keterangan_progres"][:60]+"..." if len(h["keterangan_progres"])>60 else h["keterangan_progres"],
-                "Lampiran": "Link:" if h["link_file"] else "—"
+                "Lampiran": "Link" if h["link_file"] else "—"
             } for h in history])
             st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -275,6 +322,8 @@ def show_my_task():
             with cy:
                 if st.button(":material/check: Ya, Hapus", key="confirm_yes", use_container_width=True):
                     execute_query("DELETE FROM routine_logbooks WHERE id=?", (del_id,))
+                    get_logbook_history.clear()
+                    get_logbook_job_list.clear()
                     del st.session_state["delete_logbook_id"]
                     st.success("Logbook dihapus.")
                     st.rerun()
@@ -303,6 +352,7 @@ def show_my_task():
                     if simpan:
                         execute_query("UPDATE routine_logbooks SET tanggal_logbook=?, keterangan_progres=? WHERE id=?",
                                       (str(tgl_baru), ket_baru, edit_id))
+                        get_logbook_history.clear()
                         del st.session_state["edit_logbook_id"]
                         st.success("Logbook diperbarui.")
                         st.rerun()
@@ -344,9 +394,7 @@ def show_my_task():
         if not show_actions:
             return
 
-        query_sub  = "SELECT * FROM submissions WHERE task_id=? ORDER BY id DESC LIMIT 1"
-        res_sub    = fetch_all(query_sub, (task["id"],))
-        existing   = res_sub[0] if res_sub else None
+        existing   = get_latest_submission(task["id"])
         is_editing = st.session_state.get(f"editing_{task['id']}", False)
         boleh_isi  = status in ["assigned", "revision"]
 
@@ -397,6 +445,8 @@ def show_my_task():
                                     execute_query("INSERT INTO submissions (task_id,link_drive,keterangan,tanggal_submit) VALUES (?,?,?,?)",
                                                   (task["id"], final_link, ket_submit, now))
                                     execute_query("UPDATE tasks SET status_task='submitted' WHERE id=?", (task["id"],))
+                                get_latest_submission.clear()
+                                get_assigned_tasks.clear()
                                 st.session_state["trigger_success_balloons"] = True
                                 st.rerun()
 
@@ -406,10 +456,7 @@ def show_my_task():
                         st.rerun()
 
         if status == "revision":
-            fb = fetch_all(
-                "SELECT komentar, tanggal_ditulis FROM feedback WHERE submission_id IN (SELECT id FROM submissions WHERE task_id=?) ORDER BY id DESC LIMIT 1",
-                (task["id"],)
-            )
+            fb = get_latest_feedback(task["id"])
             if fb:
                 st.error(f":material/rate_review: **Catatan Revisi ({fb[0]['tanggal_ditulis']}):** {fb[0]['komentar']}")
 
@@ -427,11 +474,7 @@ def show_my_task():
 
         st.markdown("<hr style='border-color:#E2E8F0;margin:8px 0 16px 0'>", unsafe_allow_html=True)
 
-        all_tasks = fetch_all(
-            "SELECT t.*, u.nama as nama_atasan FROM tasks t JOIN users u ON t.assigned_by=u.id WHERE t.assigned_to=? ORDER BY t.id DESC",
-            (user["id"],)
-        )
-        # Tab 2 hanya tampilkan yang BUKAN approved
+        all_tasks = get_assigned_tasks(user["id"])
         active_tasks = [t for t in all_tasks if t["status_task"].lower() != "approved"]
 
         if search_q:
@@ -465,6 +508,7 @@ def show_my_task():
 
         st.markdown("<hr style='border-color:#E2E8F0;margin:8px 0 16px 0'>", unsafe_allow_html=True)
 
+        all_tasks = get_assigned_tasks(user["id"])
         approved_tasks = [t for t in all_tasks if t["status_task"].lower() == "approved"]
 
         if search_ap:
