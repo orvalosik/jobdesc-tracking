@@ -121,6 +121,18 @@ def show_register():
             border-color: rgba(148, 163, 184, 0.5) !important;
             color: #F1F5F9 !important;
         }}
+        
+        /* Sembunyikan toolbar atas (Fork, GitHub, dll) */
+        [data-testid="stToolbar"] {{ display: none !important; }}
+
+        /* Sembunyikan footer bawah (Made with Streamlit) */
+        footer {{ display: none !important; }}
+
+        /* Sembunyikan header Streamlit */
+        [data-testid="stHeader"] {{ display: none !important; }}
+
+        /* Sembunyikan decoration atas */
+        [data-testid="stDecoration"] {{ display: none !important; }}
         </style>
     """, unsafe_allow_html=True)
 
