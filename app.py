@@ -119,6 +119,18 @@ def show_main_app():
                 border-top: 1px solid rgba(148, 163, 184, 0.1);
                 margin: 12px 0;
             }
+            
+            /* Sembunyikan toolbar atas (Fork, GitHub, dll) */
+            [data-testid="stToolbar"] { display: none !important; }
+
+            /* Sembunyikan footer bawah (Made with Streamlit) */
+            footer { display: none !important; }
+
+            /* Sembunyikan header Streamlit */
+            [data-testid="stHeader"] { display: none !important; }
+
+            /* Sembunyikan decoration atas */
+            [data-testid="stDecoration"] { display: none !important; }
         </style>
     """, unsafe_allow_html=True)
 
