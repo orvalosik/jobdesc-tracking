@@ -10,7 +10,7 @@ token.json
 google_creds.json
 client_secret.json
 
-.streamlit/secrets.toml
+
 
 venv/
 .venv/
