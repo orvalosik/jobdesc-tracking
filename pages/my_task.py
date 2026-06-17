@@ -1,13 +1,10 @@
 import streamlit as st
 import pandas as pd
-from database import fetch_all, execute_query
+from database import fetch_all, execute_query, get_secret
 from datetime import datetime, date, timedelta
 
 # =========================================================================
 # UPLOAD KE GOOGLE DRIVE
-# Import google api libraries LAZY (di dalam fungsi) supaya tidak
-# membebani waktu render setiap halaman dibuka — hanya di-import
-# saat user benar-benar melakukan upload.
 # =========================================================================
 def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
     from googleapiclient.discovery import build
@@ -15,17 +12,16 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
     import io
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
-    from database import get_secret
 
     ROOT_FOLDER_ID = "11sU-BVtM-VLhKPKYChDyXwgeaHcWG0xg"
     try:
         SCOPES = ["https://www.googleapis.com/auth/drive.file"]
         creds = Credentials(
             token=None,
-            refresh_token=get_secret["gdrive_oauth"]["refresh_token"],
-            token_uri=get_secret["gdrive_oauth"]["token_uri"],
-            client_id=get_secret["gdrive_oauth"]["client_id"],
-            client_secret=get_secret["gdrive_oauth"]["client_secret"],
+            refresh_token=get_secret("gdrive_oauth", "refresh_token"),
+            token_uri=get_secret("gdrive_oauth", "token_uri"),
+            client_id=get_secret("gdrive_oauth", "client_id"),
+            client_secret=get_secret("gdrive_oauth", "client_secret"),
             scopes=SCOPES
         )
         creds.refresh(Request())
@@ -62,9 +58,7 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
 
 
 # =========================================================================
-# QUERY YANG DI-CACHE
-# TTL singkat (15-30s) supaya data tidak terasa basi tapi query
-# tidak diulang setiap re-run / pindah tab.
+# QUERY HELPERS
 # =========================================================================
 @st.cache_data(ttl=30)
 def get_jobdesc_templates(role, divisi, kategori):
@@ -97,16 +91,23 @@ def get_assigned_tasks(user_id):
     )
 
 @st.cache_data(ttl=10)
-def get_latest_submission(task_id):
-    res = fetch_all("SELECT * FROM submissions WHERE task_id=? ORDER BY id DESC LIMIT 1", (task_id,))
-    return res[0] if res else None
-
-@st.cache_data(ttl=10)
-def get_latest_feedback(task_id):
+def get_all_submissions(task_id):
+    """Ambil semua riwayat submission untuk satu task, terbaru di atas."""
     return fetch_all(
-        "SELECT komentar, tanggal_ditulis FROM feedback WHERE submission_id IN (SELECT id FROM submissions WHERE task_id=?) ORDER BY id DESC LIMIT 1",
+        "SELECT * FROM submissions WHERE task_id=? ORDER BY id DESC",
         (task_id,)
     )
+
+@st.cache_data(ttl=10)
+def get_all_feedback(task_id):
+    """Ambil semua riwayat feedback untuk satu task, terbaru di atas."""
+    return fetch_all("""
+        SELECT f.komentar, f.tanggal_ditulis, s.tanggal_submit, s.link_drive
+        FROM feedback f
+        JOIN submissions s ON f.submission_id = s.id
+        WHERE s.task_id=?
+        ORDER BY f.id DESC
+    """, (task_id,))
 
 
 # =========================================================================
@@ -119,7 +120,6 @@ def show_my_task():
 
     st.markdown("""
         <style>
-        /* Header card */
         .header-card {
             background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
             padding: 24px 28px; border-radius: 16px; margin-bottom: 24px;
@@ -128,7 +128,6 @@ def show_my_task():
         .header-card h2 { margin:0 0 4px 0; font-size:22px; font-weight:600; color:white !important; }
         .header-card p  { margin:0; font-size:13px; color:#94A3B8 !important; }
 
-        /* Task card */
         .task-card {
             background: white; padding: 18px 20px; border-radius: 12px;
             border: 1px solid #E2E8F0; border-left: 4px solid #10B981;
@@ -140,14 +139,31 @@ def show_my_task():
             margin-bottom: 12px;
         }
 
-        /* Status badges */
         .badge { display:inline-block; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
         .badge-assigned  { background:#EFF6FF; color:#1D4ED8; }
         .badge-submitted { background:#FFF7ED; color:#C2410C; }
         .badge-revision  { background:#FEF2F2; color:#DC2626; }
         .badge-approved  { background:#DCFCE7; color:#15803D; }
 
-        /* Tombol emerald (simpan/kirim) */
+        .submission-item {
+            background: #F8FAFC; border: 1px solid #E2E8F0;
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 8px;
+        }
+        .submission-item-latest {
+            background: #F0FDF4; border: 1px solid #BBF7D0;
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 8px;
+        }
+        .feedback-item {
+            background: #FFF7ED; border: 1px solid #FED7AA;
+            border-left: 3px solid #F97316;
+            border-radius: 8px; padding: 12px 14px; margin-bottom: 8px;
+        }
+        .timeline-label {
+            font-size: 11px; color: #94A3B8; font-weight: 500;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            margin-bottom: 6px;
+        }
+
         section.main button[kind="primary"],
         section.main div[data-testid="stFormSubmitButton"] > button[kind="primaryFormSubmit"],
         section.main div[data-testid="stFormSubmitButton"] > button {
@@ -155,12 +171,7 @@ def show_my_task():
             color: white !important; border: none !important;
             font-weight: 600 !important; border-radius: 10px !important;
         }
-        section.main button[kind="primary"]:hover,
-        section.main div[data-testid="stFormSubmitButton"] > button:hover {
-            opacity: 0.9 !important;
-        }
 
-        /* Tombol batal/hapus — merah */
         .st-key-btn_batal_edit button,
         .st-key-btn_batal_hapus button,
         .st-key-confirm_no button {
@@ -169,20 +180,12 @@ def show_my_task():
             border: 1px solid rgba(239,68,68,.35) !important;
             border-radius: 10px !important;
         }
-        .st-key-btn_batal_edit button:hover,
-        .st-key-btn_batal_hapus button:hover,
-        .st-key-confirm_no button:hover {
-            background: rgba(239,68,68,.06) !important;
-        }
-
-        /* Tombol confirm hapus — merah solid */
         .st-key-confirm_yes button {
             background: #EF4444 !important;
             color: white !important; border: none !important;
             border-radius: 10px !important; font-weight: 600 !important;
         }
 
-        /* Tab */
         .stTabs [data-baseweb="tab-list"] {
             gap: 4px; background:#F1F5F9; padding:4px; border-radius:10px;
         }
@@ -252,13 +255,11 @@ def show_my_task():
                             "INSERT INTO routine_logbooks (user_id, tanggal_logbook, jobdesc_id, keterangan_progres, link_file, tanggal_input) VALUES (?,?,?,?,?,?)",
                             (user["id"], str(tgl_logbook), jobdesc_id, keterangan, final_link, now_ts)
                         )
-                        # Bersihkan cache yang relevan supaya riwayat langsung update
                         get_logbook_history.clear()
                         get_logbook_job_list.clear()
                         st.success(f"Logbook {kategori_periodik.lower()} berhasil disimpan!")
                         st.rerun()
 
-        # Riwayat logbook
         st.markdown("<hr style='border-color:#E2E8F0; margin:20px 0'>", unsafe_allow_html=True)
         st.markdown('<p style="font-size:15px;font-weight:600;color:#1E293B;margin-bottom:12px;">Riwayat Logbook</p>', unsafe_allow_html=True)
 
@@ -291,7 +292,7 @@ def show_my_task():
                 "Tanggal": h["tanggal_logbook"], "Pekerjaan": h["nama_tugas"],
                 "Kategori": h["kategori_periodik"],
                 "Keterangan": h["keterangan_progres"][:60]+"..." if len(h["keterangan_progres"])>60 else h["keterangan_progres"],
-                "Lampiran": "Link" if h["link_file"] else "—"
+                "Lampiran": "✓" if h["link_file"] else "—"
             } for h in history])
             st.dataframe(df, use_container_width=True, hide_index=True)
 
@@ -315,7 +316,6 @@ def show_my_task():
                 if st.button(":material/delete: Hapus Logbook", use_container_width=True, key="btn_hapus_log"):
                     st.session_state["delete_logbook_id"] = sel_log["id"]
 
-        # Konfirmasi hapus
         if st.session_state.get("delete_logbook_id"):
             del_id = st.session_state["delete_logbook_id"]
             st.warning("Yakin ingin menghapus logbook ini?")
@@ -333,7 +333,6 @@ def show_my_task():
                     del st.session_state["delete_logbook_id"]
                     st.rerun()
 
-        # Form edit logbook
         if st.session_state.get("edit_logbook_id"):
             edit_id   = st.session_state["edit_logbook_id"]
             edit_rows = fetch_all("SELECT * FROM routine_logbooks WHERE id=?", (edit_id,))
@@ -362,7 +361,130 @@ def show_my_task():
                         st.rerun()
 
     # =========================================================================
-    # HELPER: render satu task card non-rutin
+    # HELPER: render detail submission + feedback history (expander)
+    # =========================================================================
+    def render_detail_expander(task, show_submit_form=True):
+        """Expander berisi riwayat semua submission dan feedback untuk satu task."""
+        submissions = get_all_submissions(task["id"])
+        feedbacks   = get_all_feedback(task["id"])
+        status      = task["status_task"].lower()
+
+        sub_count = len(submissions)
+        fb_count  = len(feedbacks)
+        label     = f":material/history: Riwayat Pengumpulan ({sub_count}) & Feedback ({fb_count})"
+
+        with st.expander(label, expanded=(status == "revision")):
+
+            # ── Feedback dari atasan ──────────────────────────────────────
+            if feedbacks:
+                st.markdown('<p class="timeline-label">💬 Feedback dari Atasan</p>', unsafe_allow_html=True)
+                for fb in feedbacks:
+                    st.markdown(f"""
+                        <div class="feedback-item">
+                            <p style="margin:0 0 4px 0;font-size:13px;color:#9A3412;font-weight:600;">
+                                {fb['tanggal_ditulis']}
+                            </p>
+                            <p style="margin:0;font-size:14px;color:#1E293B;">{fb['komentar']}</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.caption("Belum ada feedback dari atasan.")
+
+            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+            # ── Riwayat semua pengumpulan ─────────────────────────────────
+            if submissions:
+                st.markdown('<p class="timeline-label">📎 Riwayat Pengumpulan</p>', unsafe_allow_html=True)
+                for i, sub in enumerate(submissions):
+                    is_latest = (i == 0)
+                    card_cls  = "submission-item-latest" if is_latest else "submission-item"
+                    tag       = " <span style='font-size:10px;background:#10B981;color:white;padding:2px 6px;border-radius:10px;'>Terbaru</span>" if is_latest else ""
+                    st.markdown(f"""
+                        <div class="{card_cls}">
+                            <p style="margin:0 0 4px 0;font-size:12px;color:#64748B;">
+                                Pengumpulan ke-{sub_count - i}{tag}
+                                &nbsp;·&nbsp; {sub['tanggal_submit']}
+                            </p>
+                            <a href="{sub['link_drive']}" target="_blank"
+                               style="font-size:13px;color:#0EA5E9;text-decoration:none;">
+                               :material/open_in_new: Buka Dokumen
+                            </a>
+                            {"<p style='margin:4px 0 0 0;font-size:12px;color:#64748B;'>📝 " + sub['keterangan'] + "</p>" if sub.get('keterangan') else ""}
+                        </div>
+                    """, unsafe_allow_html=True)
+            else:
+                st.caption("Belum ada pengumpulan.")
+
+            # ── Form kirim / ubah (hanya jika status memungkinkan) ────────
+            if show_submit_form and status in ["assigned", "revision", "submitted"]:
+                st.markdown("<hr style='border-color:#E2E8F0;margin:12px 0'>", unsafe_allow_html=True)
+                latest_sub = submissions[0] if submissions else None
+                is_editing = st.session_state.get(f"editing_{task['id']}", False)
+
+                if status == "submitted" and latest_sub and not is_editing:
+                    if st.button(":material/edit: Ubah Pengumpulan", key=f"btn_edit_{task['id']}", use_container_width=True):
+                        st.session_state[f"editing_{task['id']}"] = True
+                        st.rerun()
+                else:
+                    lbl_section = "Perbarui Pengumpulan" if is_editing else "Kirim Hasil Kerja"
+                    st.markdown(f'<p style="font-size:13px;font-weight:600;color:#1E293B;margin-bottom:8px;">:material/upload_file: {lbl_section}</p>', unsafe_allow_html=True)
+
+                    metode = st.radio("Metode:", ["Tautan URL", "Unggah Berkas (PDF/Excel)"],
+                                      horizontal=True, key=f"metode_{task['id']}")
+
+                    with st.form(key=f"form_submit_{task['id']}", clear_on_submit=True):
+                        final_link = ""
+                        if metode == "Tautan URL":
+                            default_v  = latest_sub["link_drive"] if (is_editing and latest_sub) else ""
+                            final_link = st.text_input("Link URL Hasil Kerja:", value=default_v,
+                                                       placeholder="https://drive.google.com/...")
+                        else:
+                            uf = st.file_uploader("Pilih Berkas (maks 10MB):", type=["pdf","xlsx","xls"],
+                                                  key=f"file_{task['id']}")
+
+                        default_k  = latest_sub["keterangan"] if (is_editing and latest_sub) else ""
+                        ket_submit = st.text_area("Catatan Tambahan (Opsional):", value=default_k,
+                                                  placeholder="Tulis catatan...", key=f"ket_{task['id']}", height=80)
+
+                        lbl_btn = ":material/save: Simpan Perubahan" if is_editing else ":material/send: Kirim Tugas"
+                        if st.form_submit_button(lbl_btn, use_container_width=True):
+                            valid = True
+                            if metode == "Tautan URL" and not final_link.strip():
+                                st.error("Masukkan tautan URL terlebih dahulu."); valid = False
+                            elif metode == "Unggah Berkas (PDF/Excel)" and 'uf' in dir() and uf is None:
+                                st.error("Pilih berkas terlebih dahulu."); valid = False
+
+                            if valid:
+                                if metode == "Unggah Berkas (PDF/Excel)" and 'uf' in dir() and uf:
+                                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    with st.spinner("Mengunggah berkas..."):
+                                        final_link = upload_to_google_drive(
+                                            uf, f"Tugas_{task['id']}_{ts}_{uf.name}", user["divisi"]
+                                        )
+                                if final_link:
+                                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    # Selalu INSERT row baru — riwayat terjaga
+                                    execute_query(
+                                        "INSERT INTO submissions (task_id, link_drive, keterangan, tanggal_submit) VALUES (?,?,?,?)",
+                                        (task["id"], final_link, ket_submit, now)
+                                    )
+                                    execute_query(
+                                        "UPDATE tasks SET status_task='submitted' WHERE id=?",
+                                        (task["id"],)
+                                    )
+                                    st.session_state[f"editing_{task['id']}"] = False
+                                    get_all_submissions.clear()
+                                    get_assigned_tasks.clear()
+                                    st.session_state["trigger_success_balloons"] = True
+                                    st.rerun()
+
+                    if is_editing:
+                        if st.button(":material/close: Batal", key=f"btn_batal_edit_{task['id']}", use_container_width=True):
+                            st.session_state[f"editing_{task['id']}"] = False
+                            st.rerun()
+
+    # =========================================================================
+    # HELPER: render task card header
     # =========================================================================
     def render_task_card(task, show_actions=True):
         status = task["status_task"].lower()
@@ -374,6 +496,21 @@ def show_my_task():
         }
         badge_cls, badge_txt = badge_map.get(status, ("badge-assigned", status.capitalize()))
         card_cls = "task-card-approved" if status == "approved" else "task-card"
+
+        # Banner revisi di atas card jika ada feedback terbaru
+        if status == "revision":
+            fb_list = get_all_feedback(task["id"])
+            if fb_list:
+                latest_fb = fb_list[0]
+                st.markdown(f"""
+                    <div style="background:#FFF7ED;border:1px solid #FED7AA;border-left:4px solid #F97316;
+                                border-radius:10px;padding:10px 14px;margin-bottom:8px;">
+                        <p style="margin:0 0 2px 0;font-size:12px;color:#9A3412;font-weight:600;">
+                            ⚠️ Perlu Revisi · {latest_fb['tanggal_ditulis']}
+                        </p>
+                        <p style="margin:0;font-size:13px;color:#1E293B;">{latest_fb['komentar']}</p>
+                    </div>
+                """, unsafe_allow_html=True)
 
         st.markdown(f"""
             <div class="{card_cls}">
@@ -392,79 +529,12 @@ def show_my_task():
             </div>
         """, unsafe_allow_html=True)
 
-        if not show_actions:
-            return
-
-        existing   = get_latest_submission(task["id"])
-        is_editing = st.session_state.get(f"editing_{task['id']}", False)
-        boleh_isi  = status in ["assigned", "revision"]
-
-        if status == "submitted" and existing:
-            st.markdown(f":material/link: **Tautan saat ini:** [{existing['link_drive']}]({existing['link_drive']})")
-            if existing["keterangan"]:
-                st.markdown(f":material/comment: *{existing['keterangan']}*")
-            if st.button(":material/edit: Ubah Pengumpulan", key=f"btn_edit_{task['id']}"):
-                st.session_state[f"editing_{task['id']}"] = True
-
-        if boleh_isi or is_editing:
-            label_exp = f"Kirim Hasil '{task['judul']}'" if not is_editing else f"Perbarui Hasil '{task['judul']}'"
-            with st.expander(f":material/upload_file: {label_exp}", expanded=is_editing):
-                metode = st.radio("Metode:", ["Tautan URL", "Unggah Berkas (PDF/Excel)"],
-                                  horizontal=True, key=f"metode_{task['id']}")
-                with st.form(key=f"form_submit_{task['id']}", clear_on_submit=True):
-                    final_link = ""
-                    if metode == "Tautan URL":
-                        default_v  = existing["link_drive"] if (is_editing and existing) else ""
-                        final_link = st.text_input("Link URL Hasil Kerja:", value=default_v, placeholder="https://drive.google.com/...")
-                    else:
-                        uf = st.file_uploader("Pilih Berkas (maks 10MB):", type=["pdf","xlsx","xls"], key=f"file_{task['id']}")
-
-                    default_k  = existing["keterangan"] if (is_editing and existing) else ""
-                    ket_submit = st.text_area("Catatan Tambahan (Opsional):", value=default_k,
-                                              placeholder="Tulis catatan...", key=f"ket_{task['id']}", height=80)
-
-                    lbl_btn = ":material/send: Kirim Tugas" if not is_editing else ":material/save: Simpan Perubahan"
-                    if st.form_submit_button(lbl_btn, use_container_width=True):
-                        valid = True
-                        if metode == "Tautan URL" and not final_link.strip():
-                            st.error("Masukkan tautan URL terlebih dahulu."); valid = False
-                        elif metode == "Unggah Berkas (PDF/Excel)" and uf is None:
-                            st.error("Pilih berkas terlebih dahulu."); valid = False
-
-                        if valid:
-                            if metode == "Unggah Berkas (PDF/Excel)" and uf:
-                                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                                with st.spinner("Mengunggah berkas..."):
-                                    final_link = upload_to_google_drive(uf, f"Tugas_{task['id']}_{ts}_{uf.name}", user["divisi"])
-                            if final_link:
-                                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                if is_editing and existing:
-                                    execute_query("UPDATE submissions SET link_drive=?,keterangan=?,tanggal_submit=? WHERE id=?",
-                                                  (final_link, ket_submit, now, existing["id"]))
-                                    st.session_state[f"editing_{task['id']}"] = False
-                                else:
-                                    execute_query("INSERT INTO submissions (task_id,link_drive,keterangan,tanggal_submit) VALUES (?,?,?,?)",
-                                                  (task["id"], final_link, ket_submit, now))
-                                    execute_query("UPDATE tasks SET status_task='submitted' WHERE id=?", (task["id"],))
-                                get_latest_submission.clear()
-                                get_assigned_tasks.clear()
-                                st.session_state["trigger_success_balloons"] = True
-                                st.rerun()
-
-                if is_editing:
-                    if st.button(":material/close: Batal Mengubah", key=f"btn_batal_edit_{task['id']}", use_container_width=True):
-                        st.session_state[f"editing_{task['id']}"] = False
-                        st.rerun()
-
-        if status == "revision":
-            fb = get_latest_feedback(task["id"])
-            if fb:
-                st.error(f":material/rate_review: **Catatan Revisi ({fb[0]['tanggal_ditulis']}):** {fb[0]['komentar']}")
-
+        # Expander detail — selalu tampil di semua status
+        render_detail_expander(task, show_actions=show_actions)
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
     # =========================================================================
-    # TAB 2: NON-RUTINITAS AKTIF (bukan approved)
+    # TAB 2: NON-RUTINITAS AKTIF
     # =========================================================================
     with tab_non_rutin:
         fc1, fc2, fc3, fc4 = st.columns([1.5, 1, 1, 1])
@@ -475,13 +545,14 @@ def show_my_task():
 
         st.markdown("<hr style='border-color:#E2E8F0;margin:8px 0 16px 0'>", unsafe_allow_html=True)
 
-        all_tasks = get_assigned_tasks(user["id"])
+        all_tasks    = get_assigned_tasks(user["id"])
         active_tasks = [t for t in all_tasks if t["status_task"].lower() != "approved"]
 
         if search_q:
             active_tasks = [t for t in active_tasks if search_q.lower() in t["judul"].lower()]
         if sel_status != "Semua":
             active_tasks = [t for t in active_tasks if t["status_task"].lower() == sel_status.lower()]
+
         filtered_active = []
         for t in active_tasks:
             try:
@@ -503,17 +574,18 @@ def show_my_task():
         st.markdown('<p style="font-size:15px;font-weight:600;color:#1E293B;margin-bottom:4px;">Arsip tugas yang telah disetujui atasan.</p>', unsafe_allow_html=True)
 
         sc1, sc2, sc3 = st.columns([2, 1, 1])
-        with sc1: search_ap  = st.text_input(":material/search: Cari Judul", placeholder="Kata kunci...", key="search_ap")
-        with sc2: start_ap   = st.date_input("Dari", value=date(2026,1,1), key="start_ap")
-        with sc3: end_ap     = st.date_input("Sampai", value=date.today(), key="end_ap")
+        with sc1: search_ap = st.text_input(":material/search: Cari Judul", placeholder="Kata kunci...", key="search_ap")
+        with sc2: start_ap  = st.date_input("Dari", value=date(2026,1,1), key="start_ap")
+        with sc3: end_ap    = st.date_input("Sampai", value=date.today(), key="end_ap")
 
         st.markdown("<hr style='border-color:#E2E8F0;margin:8px 0 16px 0'>", unsafe_allow_html=True)
 
-        all_tasks = get_assigned_tasks(user["id"])
+        all_tasks      = get_assigned_tasks(user["id"])
         approved_tasks = [t for t in all_tasks if t["status_task"].lower() == "approved"]
 
         if search_ap:
             approved_tasks = [t for t in approved_tasks if search_ap.lower() in t["judul"].lower()]
+
         filtered_ap = []
         for t in approved_tasks:
             try:
