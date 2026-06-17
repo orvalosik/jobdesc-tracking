@@ -4,7 +4,7 @@ import streamlit as st
 # =========================================================================
 # KONEKSI — DI-CACHE SUPAYA TIDAK BUKA KONEKSI BARU SETIAP QUERY
 # =========================================================================
-@st.cache_resource
+
 def get_connection():
     """
     Koneksi ke Turso di-cache sebagai resource.
