@@ -407,7 +407,7 @@ def show_my_task():
                             </p>
                             <a href="{sub['link_drive']}" target="_blank"
                                style="font-size:13px;color:#0EA5E9;text-decoration:none;">
-                               :material/open_in_new: Buka Dokumen
+                               Buka Dokumen
                             </a>
                             {"<p style='margin:4px 0 0 0;font-size:12px;color:#64748B;'>📝 " + sub['keterangan'] + "</p>" if sub.get('keterangan') else ""}
                         </div>
@@ -427,7 +427,7 @@ def show_my_task():
                         st.rerun()
                 else:
                     lbl_section = "Perbarui Pengumpulan" if is_editing else "Kirim Hasil Kerja"
-                    st.markdown(f'<p style="font-size:13px;font-weight:600;color:#1E293B;margin-bottom:8px;">:material/upload_file: {lbl_section}</p>', unsafe_allow_html=True)
+                    st.markdown(f'<p style="font-size:13px;font-weight:600;color:#1E293B;margin-bottom:8px;"> {lbl_section}</p>', unsafe_allow_html=True)
 
                     metode = st.radio("Metode:", ["Tautan URL", "Unggah Berkas (PDF/Excel)"],
                                       horizontal=True, key=f"metode_{task['id']}")
