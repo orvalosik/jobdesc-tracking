@@ -1,44 +1,25 @@
 import libsql
 import streamlit as st
-import os
 
 # =========================================================================
-# HELPER SECRET — BISA JALAN DI STREAMLIT CLOUD & RAILWAY
+# KONEKSI — DI-CACHE SUPAYA TIDAK BUKA KONEKSI BARU SETIAP QUERY
 # =========================================================================
-def get_secret(key, subkey=None):
-    try:
-        if subkey:
-            return st.secrets[key][subkey]
-        return st.secrets[key]
-    except:
-        if subkey:
-            return os.environ[f"{key}__{subkey}"]
-        return os.environ[key]
-
-
-# =========================================================================
-# KONEKSI — TTL 10 MENIT SUPAYA STREAM TURSO TIDAK EXPIRED
-# =========================================================================
-@st.cache_resource(ttl=600)
+@st.cache_resource
 def get_connection():
+    """
+    Koneksi ke Turso di-cache sebagai resource.
+    Streamlit akan reuse koneksi yang sama selama session berjalan,
+    bukan buka-tutup koneksi baru di setiap fetch_all/fetch_one/execute_query.
+    """
     return libsql.connect(
-        database=get_secret("TURSO_DATABASE_URL"),
-        auth_token=get_secret("TURSO_AUTH_TOKEN")
+        database=st.secrets["TURSO_DATABASE_URL"],
+        auth_token=st.secrets["TURSO_AUTH_TOKEN"]
     )
 
 
-def _get_cursor():
-    try:
-        conn = get_connection()
-        return conn, conn.cursor()
-    except Exception:
-        st.cache_resource.clear()
-        conn = get_connection()
-        return conn, conn.cursor()
-
-
 def fetch_all(query, params=()):
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
     cursor.execute(query, list(params) if params else [])
     rows = cursor.fetchall()
     columns = [desc[0] for desc in cursor.description]
@@ -46,7 +27,8 @@ def fetch_all(query, params=()):
 
 
 def fetch_one(query, params=()):
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
     cursor.execute(query, list(params) if params else [])
     row = cursor.fetchone()
     if row:
@@ -56,7 +38,8 @@ def fetch_one(query, params=()):
 
 
 def execute_query(query, params=()):
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
     cursor.execute(query, list(params) if params else [])
     conn.commit()
 
@@ -65,8 +48,10 @@ def execute_query(query, params=()):
 # INIT DB
 # =========================================================================
 def init_db():
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
 
+    # 1. TABEL USERS
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -80,6 +65,7 @@ def init_db():
     )
     """)
 
+    # 2. TABEL TASKS
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS tasks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -95,6 +81,7 @@ def init_db():
     )
     """)
 
+    # 3. TABEL SUBMISSIONS
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS submissions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -106,6 +93,7 @@ def init_db():
     )
     """)
 
+    # 4. TABEL FEEDBACK
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS feedback (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -116,6 +104,7 @@ def init_db():
     )
     """)
 
+    # 5. TABEL JOBDESC TEMPLATES
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS jobdesc_templates (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,6 +119,7 @@ def init_db():
     )
     """)
 
+    # 6. TABEL ROUTINE LOGBOOKS
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS routine_logbooks (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -144,6 +134,7 @@ def init_db():
     )
     """)
 
+    # 7. TABEL DEADLINE HISTORY
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS deadline_history (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
