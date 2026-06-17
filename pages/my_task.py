@@ -530,7 +530,7 @@ def show_my_task():
         """, unsafe_allow_html=True)
 
         # Expander detail — selalu tampil di semua status
-        render_detail_expander(task, show_actions=show_actions)
+        render_detail_expander(task, show_submit_form=show_actions)
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
     # =========================================================================
