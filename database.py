@@ -17,9 +17,8 @@ def get_secret(key, subkey=None):
 
 
 # =========================================================================
-# KONEKSI — TTL 10 MENIT SUPAYA STREAM TURSO TIDAK EXPIRED
+# KONEKSI — FRESH TIAP QUERY, TIDAK DI-CACHE
 # =========================================================================
-@st.cache_resource(ttl=600)
 def get_connection():
     return libsql.connect(
         database=get_secret("TURSO_DATABASE_URL"),
@@ -27,18 +26,9 @@ def get_connection():
     )
 
 
-def _get_cursor():
-    try:
-        conn = get_connection()
-        return conn, conn.cursor()
-    except Exception:
-        st.cache_resource.clear()
-        conn = get_connection()
-        return conn, conn.cursor()
-
-
 def fetch_all(query, params=()):
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
     cursor.execute(query, list(params) if params else [])
     rows = cursor.fetchall()
     columns = [desc[0] for desc in cursor.description]
@@ -46,7 +36,8 @@ def fetch_all(query, params=()):
 
 
 def fetch_one(query, params=()):
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
     cursor.execute(query, list(params) if params else [])
     row = cursor.fetchone()
     if row:
@@ -56,7 +47,8 @@ def fetch_one(query, params=()):
 
 
 def execute_query(query, params=()):
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
     cursor.execute(query, list(params) if params else [])
     conn.commit()
 
@@ -65,7 +57,8 @@ def execute_query(query, params=()):
 # INIT DB
 # =========================================================================
 def init_db():
-    conn, cursor = _get_cursor()
+    conn = get_connection()
+    cursor = conn.cursor()
 
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
