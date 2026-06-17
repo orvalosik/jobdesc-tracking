@@ -15,17 +15,16 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
     import io
     from google.oauth2.credentials import Credentials
     from google.auth.transport.requests import Request
-    from database import get_secret
 
     ROOT_FOLDER_ID = "11sU-BVtM-VLhKPKYChDyXwgeaHcWG0xg"
     try:
         SCOPES = ["https://www.googleapis.com/auth/drive.file"]
         creds = Credentials(
             token=None,
-            refresh_token=get_secret("gdrive_oauth", "refresh_token"),
-            token_uri=get_secret("gdrive_oauth", "token_uri"),
-            client_id=get_secret("gdrive_oauth", "client_id"),
-            client_secret=get_secret("gdrive_oauth", "client_secret"),
+            refresh_token=st.secrets["gdrive_oauth"]["refresh_token"],
+            token_uri=st.secrets["gdrive_oauth"]["token_uri"],
+            client_id=st.secrets["gdrive_oauth"]["client_id"],
+            client_secret=st.secrets["gdrive_oauth"]["client_secret"],
             scopes=SCOPES
         )
         creds.refresh(Request())
