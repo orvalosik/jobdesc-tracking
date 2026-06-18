@@ -1,6 +1,9 @@
 import streamlit as st
 from database import fetch_all, fetch_one, execute_query
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
+
+WIB = ZoneInfo("Asia/Jakarta")
 
 # =========================================================================
 # KONSTANTA ROLE
@@ -419,12 +422,12 @@ def render_edit_action(user):
                             execute_query("""
                                 INSERT INTO deadline_history (task_id,old_deadline,new_deadline,changed_by,changed_at)
                                 VALUES (?,?,?,?,?)
-                            """, (task_id, old_dl, new_dl_str, user["id"], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                            """, (task_id, old_dl, new_dl_str, user["id"], datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")))
                     if sub and feedback:
                         execute_query("""
                             INSERT INTO feedback (submission_id,komentar,written_by,tanggal_ditulis)
                             VALUES (?,?,?,?)
-                        """, (sub["id"], feedback, user["id"], datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                        """, (sub["id"], feedback, user["id"], datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")))
                     st.toast("Keputusan berhasil disimpan!")
                     st.session_state["mon_view"] = "list"
                     st.rerun()
