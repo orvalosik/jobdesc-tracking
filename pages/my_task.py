@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 from database import fetch_all, execute_query, get_secret
 from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
+
+WIB = ZoneInfo("Asia/Jakarta")
 
 # =========================================================================
 # UPLOAD KE GOOGLE DRIVE
@@ -242,12 +245,12 @@ def show_my_task():
                 if not keterangan.strip():
                     st.error("Keterangan tidak boleh kosong.")
                 else:
-                    now_ts     = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    now_ts     = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")
                     jobdesc_id = template_options.get(pilihan_tugas)
                     if jobdesc_id:
                         final_link = None
                         if uploaded_file:
-                            ts  = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            ts  = datetime.now(WIB).strftime("%Y%m%d_%H%M%S")
                             fn  = f"Logbook_{user['id']}_{ts}_{uploaded_file.name}"
                             with st.spinner("Mengunggah lampiran..."):
                                 final_link = upload_to_google_drive(uploaded_file, fn, user["divisi"])
@@ -456,13 +459,13 @@ def show_my_task():
 
                             if valid:
                                 if metode == "Unggah Berkas (PDF/Excel)" and 'uf' in dir() and uf:
-                                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                    ts = datetime.now(WIB).strftime("%Y%m%d_%H%M%S")
                                     with st.spinner("Mengunggah berkas..."):
                                         final_link = upload_to_google_drive(
                                             uf, f"Tugas_{task['id']}_{ts}_{uf.name}", user["divisi"]
                                         )
                                 if final_link:
-                                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                    now = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")
                                     # Selalu INSERT row baru — riwayat terjaga
                                     execute_query(
                                         "INSERT INTO submissions (task_id, link_drive, keterangan, tanggal_submit) VALUES (?,?,?,?)",
