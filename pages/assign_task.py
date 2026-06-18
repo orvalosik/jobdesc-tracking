@@ -1,6 +1,9 @@
 import streamlit as st
 from database import execute_query, fetch_all, fetch_one
 from datetime import datetime
+from zoneinfo import ZoneInfo
+
+WIB = ZoneInfo("Asia/Jakarta")
 
 def show_assign_task():
 
@@ -163,7 +166,7 @@ def show_assign_task():
                     st.error("Judul dan deskripsi wajib diisi.")
                 else:
                     target_id = options[target_display]
-                    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    now = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")
                     execute_query(
                         "INSERT INTO tasks (judul, deskripsi, assigned_to, assigned_by, deadline, status_task, tanggal_assign) VALUES (?, ?, ?, ?, ?, ?, ?)",
                         (judul.strip(), deskripsi.strip(), target_id, user["id"], str(deadline), "assigned", now)
