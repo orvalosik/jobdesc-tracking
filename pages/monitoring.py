@@ -20,8 +20,23 @@ ROLE_MANAGER_NONSTRUKTURAL = [
     "Promosi & CS",
 ]
 
+# Role yang bisa dipantau oleh Sekretaris Direksi
+ROLE_SEKRETARIS_DAPAT_PANTAU = [
+    "Manager Marketing",
+    "Manager Umum & Personalia",
+    "Manager Keuangan",
+    "Manager Teknik",
+    "Business Development",
+    "Promosi & CS",
+    "Kabag. Promosi & CS",
+    "Supervisor Civil & Architectural",
+]
+
 def is_direksi(role):
     return role in ROLE_DIREKSI
+
+def is_sekretaris(role):
+    return role == "Sekretaris Direksi"
 
 def is_manager_or_nonstruktural(role):
     return role in ROLE_MANAGER_NONSTRUKTURAL
@@ -77,6 +92,13 @@ def show_monitoring():
             margin-bottom: 8px;
         }
 
+        .readonly-banner {
+            background: #EFF6FF; border: 1px solid #BFDBFE;
+            border-left: 4px solid #3B82F6; border-radius: 10px;
+            padding: 10px 14px; margin-bottom: 16px;
+            font-size: 13px; color: #1D4ED8;
+        }
+
         section.main button[kind="primary"],
         section.main div[data-testid="stFormSubmitButton"] > button {
             background: linear-gradient(135deg,#10B981,#059669) !important;
@@ -124,7 +146,18 @@ def show_monitoring():
         with tab_rutin:
             render_logbook_monitoring(user)
 
-    # Manager & Nonstruktural: 2 tab saja, tanpa logbook
+    # Sekretaris Direksi: 2 tab, bisa lihat semua tapi review/hapus terbatas
+    elif is_sekretaris(role):
+        tab_non_rutin, tab_approved = st.tabs([
+            "Non-Rutinitas (Aktif)",
+            "Selesai & Disetujui",
+        ])
+        with tab_non_rutin:
+            render_list(user, only_approved=False)
+        with tab_approved:
+            render_list(user, only_approved=True)
+
+    # Manager & Nonstruktural lainnya: 2 tab
     elif is_manager_or_nonstruktural(role):
         tab_non_rutin, tab_approved = st.tabs([
             "Non-Rutinitas (Aktif)",
@@ -143,15 +176,9 @@ def show_monitoring():
 # QUERY TUGAS BERDASARKAN ROLE
 # =========================================================================
 def get_tasks_for_user(user):
-    """
-    - Direksi      : semua tugas yang di-assign oleh/ke manager & nonstruktural
-    - Manager/NS   : tugas yang assigned_by atau assigned_to adalah sesama
-                     manager/nonstruktural (termasuk milik sendiri)
-    """
     role = user["role"]
 
     if is_direksi(role):
-        # Semua tugas yang pelakunya (assigner ATAU penerima) adalah manager/nonstruktural
         placeholders = ",".join("?" * len(ROLE_MANAGER_NONSTRUKTURAL))
         tasks = fetch_all(f"""
             SELECT t.*,
@@ -165,10 +192,12 @@ def get_tasks_for_user(user):
             ORDER BY t.tanggal_assign DESC
         """, ROLE_MANAGER_NONSTRUKTURAL * 2)
 
-    elif is_manager_or_nonstruktural(role):
-        # Tugas di mana assigner ATAU penerima adalah user ini,
-        # DAN pihak lainnya juga manager/nonstruktural
-        placeholders = ",".join("?" * len(ROLE_MANAGER_NONSTRUKTURAL))
+    elif is_sekretaris(role):
+        # Sekretaris bisa lihat:
+        # 1. Tugas yang dia sendiri assign (ke siapapun)
+        # 2. Tugas antar sesama ROLE_SEKRETARIS_DAPAT_PANTAU (read-only)
+        all_roles = ROLE_SEKRETARIS_DAPAT_PANTAU
+        placeholders = ",".join("?" * len(all_roles))
         tasks = fetch_all(f"""
             SELECT t.*,
                    ua.nama  as nama_assigner,  ua.role  as role_assigner,  ua.divisi as divisi_assigner,
@@ -176,13 +205,24 @@ def get_tasks_for_user(user):
             FROM tasks t
             JOIN users ua ON t.assigned_by = ua.id
             JOIN users ub ON t.assigned_to = ub.id
-            WHERE (
-                (t.assigned_by = ? AND ub.role IN ({placeholders}))
-                OR
-                (t.assigned_to = ? AND ua.role IN ({placeholders}))
-            )
+            WHERE t.assigned_by = ?
+               OR (
+                   (ua.role IN ({placeholders}) OR ub.role IN ({placeholders}))
+               )
             ORDER BY t.tanggal_assign DESC
-        """, [user["id"]] + ROLE_MANAGER_NONSTRUKTURAL + [user["id"]] + ROLE_MANAGER_NONSTRUKTURAL)
+        """, [user["id"]] + all_roles + all_roles)
+
+    elif is_manager_or_nonstruktural(role):
+        tasks = fetch_all("""
+            SELECT t.*,
+                   ua.nama  as nama_assigner,  ua.role  as role_assigner,  ua.divisi as divisi_assigner,
+                   ub.nama  as nama_karyawan,  ub.role  as role_karyawan,  ub.divisi as divisi_karyawan
+            FROM tasks t
+            JOIN users ua ON t.assigned_by = ua.id
+            JOIN users ub ON t.assigned_to = ub.id
+            WHERE t.assigned_by = ?
+            ORDER BY t.tanggal_assign DESC
+        """, [user["id"]])
 
     else:
         tasks = []
@@ -191,9 +231,25 @@ def get_tasks_for_user(user):
 
 
 # =========================================================================
+# CEK APAKAH USER BOLEH REVIEW/HAPUS TUGAS INI
+# =========================================================================
+def can_modify_task(user, task):
+    """
+    Sekretaris Direksi hanya boleh review/hapus tugas yang dia sendiri assign.
+    Direksi dan Manager/Nonstruktural lainnya boleh semua.
+    """
+    role = user["role"]
+    if is_sekretaris(role):
+        return task["assigned_by"] == user["id"]
+    return True
+
+
+# =========================================================================
 # DAFTAR TUGAS
 # =========================================================================
 def render_list(user, only_approved=False):
+    role = user["role"]
+
     if not only_approved:
         st.markdown("""
             <div class="header-card">
@@ -201,6 +257,14 @@ def render_list(user, only_approved=False):
                 <p>Evaluasi hasil kerja instruksi khusus tim dan berikan keputusan.</p>
             </div>
         """, unsafe_allow_html=True)
+        if is_sekretaris(role):
+            st.markdown("""
+                <div class="readonly-banner">
+                    ℹ️ Anda dapat memantau semua tugas di bawah ini.
+                    Aksi <strong>Review</strong> dan <strong>Hapus</strong> hanya tersedia
+                    untuk tugas yang Anda assign sendiri.
+                </div>
+            """, unsafe_allow_html=True)
     else:
         st.markdown("""
             <div class="header-card">
@@ -277,6 +341,7 @@ def render_list(user, only_approved=False):
     for t in final:
         status    = t["status_task"].lower()
         badge_cls = badge_map.get(status, "badge-assigned")
+        boleh     = can_modify_task(user, t)
 
         c1, c2, c3, c4 = st.columns([3, 2, 1.5, 2])
         with c1:
@@ -289,17 +354,25 @@ def render_list(user, only_approved=False):
             st.markdown(f'<span class="badge {badge_cls}">{status.upper()}</span>', unsafe_allow_html=True)
         with c4:
             if not only_approved:
-                b1, b2 = st.columns(2)
-                if b1.button(":material/rate_review: Review", key=f"rev_{t['id']}",
-                             use_container_width=True, type="primary"):
-                    st.session_state["selected_task_id"] = t["id"]
-                    st.session_state["mon_view"] = "edit"
-                    st.rerun()
-                if b2.button(":material/delete: Hapus", key=f"del_task_{t['id']}",
-                             use_container_width=True):
-                    execute_query("DELETE FROM tasks WHERE id=?", (t["id"],))
-                    st.toast(f"Tugas '{t['judul']}' dihapus.")
-                    st.rerun()
+                if boleh:
+                    b1, b2 = st.columns(2)
+                    if b1.button(":material/rate_review: Review", key=f"rev_{t['id']}",
+                                 use_container_width=True, type="primary"):
+                        st.session_state["selected_task_id"] = t["id"]
+                        st.session_state["mon_view"] = "edit"
+                        st.rerun()
+                    if b2.button(":material/delete: Hapus", key=f"del_task_{t['id']}",
+                                 use_container_width=True):
+                        execute_query("DELETE FROM tasks WHERE id=?", (t["id"],))
+                        st.toast(f"Tugas '{t['judul']}' dihapus.")
+                        st.rerun()
+                else:
+                    # Read-only: hanya tombol detail
+                    if st.button(":material/search: Detail", key=f"det_ro_{t['id']}",
+                                 use_container_width=True):
+                        st.session_state["selected_task_id"] = t["id"]
+                        st.session_state["mon_view"] = "edit"
+                        st.rerun()
             else:
                 if st.button(":material/search: Detail", key=f"det_{t['id']}",
                              use_container_width=True, type="primary"):
@@ -333,6 +406,17 @@ def render_edit_action(user):
                &nbsp;·&nbsp; Deadline: {task['deadline']}</p>
         </div>
     """, unsafe_allow_html=True)
+
+    # Cek apakah user boleh melakukan aksi di halaman detail ini
+    boleh_aksi = can_modify_task(user, task)
+
+    if is_sekretaris(user["role"]) and not boleh_aksi:
+        st.markdown("""
+            <div class="readonly-banner">
+                👁️ Anda melihat tugas ini dalam mode <strong>read-only</strong>.
+                Hanya pemberi tugas yang dapat memberikan review atau feedback.
+            </div>
+        """, unsafe_allow_html=True)
 
     col_a, col_b = st.columns([1, 1])
 
@@ -395,42 +479,62 @@ def render_edit_action(user):
                         """, unsafe_allow_html=True)
 
     with col_b:
-        options = ["assigned", "submitted", "revision", "approved"]
-        cur     = task["status_task"].lower()
-        idx     = options.index(cur) if cur in options else 0
+        if boleh_aksi:
+            options = ["assigned", "submitted", "revision", "approved"]
+            cur     = task["status_task"].lower()
+            idx     = options.index(cur) if cur in options else 0
 
-        with st.container(border=True):
-            st.markdown("**Keputusan Atasan**")
-            sel_status = st.selectbox("Ubah Status:", options, index=idx, key="status_sel")
+            with st.container(border=True):
+                st.markdown("**Keputusan Atasan**")
+                sel_status = st.selectbox("Ubah Status:", options, index=idx, key="status_sel")
 
-            with st.form("form_review"):
-                feedback = st.text_area("Catatan Feedback / Revisi", placeholder="Tulis instruksi atau evaluasi...")
-                new_dl   = None
-                if sel_status == "revision":
-                    st.markdown("<hr style='border-color:#E2E8F0'>", unsafe_allow_html=True)
-                    st.caption("Atur deadline baru jika diperlukan")
-                    cur_dl = datetime.strptime(task["deadline"], "%Y-%m-%d").date()
-                    new_dl = st.date_input("Deadline Baru:", value=cur_dl)
+                with st.form("form_review"):
+                    feedback = st.text_area("Catatan Feedback / Revisi", placeholder="Tulis instruksi atau evaluasi...")
+                    new_dl   = None
+                    if sel_status == "revision":
+                        st.markdown("<hr style='border-color:#E2E8F0'>", unsafe_allow_html=True)
+                        st.caption("Atur deadline baru jika diperlukan")
+                        cur_dl = datetime.strptime(task["deadline"], "%Y-%m-%d").date()
+                        new_dl = st.date_input("Deadline Baru:", value=cur_dl)
 
-                if st.form_submit_button(":material/save: Simpan Keputusan", type="primary", use_container_width=True):
-                    execute_query("UPDATE tasks SET status_task=? WHERE id=?", (sel_status, task_id))
-                    if sel_status == "revision" and new_dl:
-                        old_dl     = task["deadline"]
-                        new_dl_str = new_dl.strftime("%Y-%m-%d")
-                        if old_dl != new_dl_str:
-                            execute_query("UPDATE tasks SET deadline=? WHERE id=?", (new_dl_str, task_id))
+                    if st.form_submit_button(":material/save: Simpan Keputusan", type="primary", use_container_width=True):
+                        execute_query("UPDATE tasks SET status_task=? WHERE id=?", (sel_status, task_id))
+                        if sel_status == "revision" and new_dl:
+                            old_dl     = task["deadline"]
+                            new_dl_str = new_dl.strftime("%Y-%m-%d")
+                            if old_dl != new_dl_str:
+                                execute_query("UPDATE tasks SET deadline=? WHERE id=?", (new_dl_str, task_id))
+                                execute_query("""
+                                    INSERT INTO deadline_history (task_id,old_deadline,new_deadline,changed_by,changed_at)
+                                    VALUES (?,?,?,?,?)
+                                """, (task_id, old_dl, new_dl_str, user["id"], datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")))
+                        if sub and feedback:
                             execute_query("""
-                                INSERT INTO deadline_history (task_id,old_deadline,new_deadline,changed_by,changed_at)
-                                VALUES (?,?,?,?,?)
-                            """, (task_id, old_dl, new_dl_str, user["id"], datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")))
-                    if sub and feedback:
-                        execute_query("""
-                            INSERT INTO feedback (submission_id,komentar,written_by,tanggal_ditulis)
-                            VALUES (?,?,?,?)
-                        """, (sub["id"], feedback, user["id"], datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")))
-                    st.toast("Keputusan berhasil disimpan!")
-                    st.session_state["mon_view"] = "list"
-                    st.rerun()
+                                INSERT INTO feedback (submission_id,komentar,written_by,tanggal_ditulis)
+                                VALUES (?,?,?,?)
+                            """, (sub["id"], feedback, user["id"], datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")))
+                        st.toast("Keputusan berhasil disimpan!")
+                        st.session_state["mon_view"] = "list"
+                        st.rerun()
+        else:
+            # Read-only: tampilkan info status saja tanpa form aksi
+            with st.container(border=True):
+                st.markdown("**Informasi Tugas**")
+                status = task["status_task"].lower()
+                badge_map = {
+                    "assigned":  ("badge-assigned",  "Assigned"),
+                    "submitted": ("badge-submitted", "Submitted"),
+                    "revision":  ("badge-revision",  "Revision"),
+                    "approved":  ("badge-approved",  "Approved"),
+                }
+                badge_cls, badge_txt = badge_map.get(status, ("badge-assigned", status.capitalize()))
+                st.markdown(f"""
+                    <p>Status saat ini:</p>
+                    <span class="badge {badge_cls}" style="font-size:13px;padding:5px 14px;">{badge_txt}</span>
+                    <p style="margin-top:12px;font-size:13px;color:#64748B;">
+                        Deadline: <strong>{task['deadline']}</strong>
+                    </p>
+                """, unsafe_allow_html=True)
 
 
 # =========================================================================
@@ -444,7 +548,6 @@ def render_logbook_monitoring(user):
         </div>
     """, unsafe_allow_html=True)
 
-    # Direktur bisa lihat semua karyawan non-direksi
     bawahan = fetch_all(
         "SELECT id,nama,role,divisi FROM users WHERE role NOT IN (?,?) ORDER BY nama",
         tuple(ROLE_DIREKSI)
