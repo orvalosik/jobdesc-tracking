@@ -2,6 +2,9 @@ import streamlit as st
 from database import fetch_all
 from datetime import datetime, date
 import plotly.graph_objects as go
+from zoneinfo import ZoneInfo
+
+WIB = ZoneInfo("Asia/Jakarta")
 
 
 # =========================================================================
@@ -111,7 +114,7 @@ def show_dashboard():
     user = st.session_state["user"]
     is_direksi = user["divisi"] == "Dewan Direksi"
 
-    now = datetime.now()
+    now = datetime.now(WIB)
     st.markdown(f"""
         <div class="header-card">
             <h2>Dashboard</h2>
