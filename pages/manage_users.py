@@ -1,9 +1,9 @@
 import streamlit as st
 from database import fetch_all, fetch_one, execute_query
 
-LIST_ROLE   = ["Direktur Utama","Direktur","Promosi & CS","Business Development",
-               "Sekretaris Direksi","Manager Marketing","Manager Umum & Personalia",
-               "Manager Keuangan","Manager Teknik","Kabag. Promosi & CS",
+LIST_ROLE   = ["Direktur Utama","Direktur","Sekretaris Direksi","Kabag. Promosi & CS","Promosi & CS",
+               "Business Development", "Manager Marketing","Manager Umum & Personalia",
+               "Manager Keuangan","Manager Teknik", "Staff Adm. Marketing",
                "Supervisor Civil & Architectural"]
 LIST_DIVISI = ["Dewan Direksi","Promosi & CS","Business Development","Sekretaris Direksi",
                "Marketing","Umum & Personalia","Keuangan","Teknik"]
