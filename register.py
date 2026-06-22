@@ -168,7 +168,7 @@ def show_register():
                     "Business Development", "Sekretaris Direksi",
                     "Manager Marketing", "Manager Umum & Personalia",
                     "Manager Keuangan", "Manager Teknik",
-                    "Kabag. Promosi & CS", "Supervisor Civil & Architectural", "Staff Marketing"
+                    "Kabag. Promosi & CS", "Supervisor Civil & Architectural", "Staff Adm. Marketing"
                 ])
             with c2:
                 divisi = st.selectbox("Divisi", [
