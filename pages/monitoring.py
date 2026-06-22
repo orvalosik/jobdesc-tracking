@@ -20,23 +20,21 @@ ROLE_MANAGER_NONSTRUKTURAL = [
     "Promosi & CS",
 ]
 
-# Role yang bisa dipantau oleh Sekretaris Direksi
+# Role yang bisa pantau semua tugas tapi READ-ONLY (tidak bisa review/hapus)
+ROLE_READONLY_MONITOR = ["Sekretaris Direksi", "Staff Adm. Marketing"]
+
 ROLE_SEKRETARIS_DAPAT_PANTAU = [
-    "Manager Marketing",
-    "Manager Umum & Personalia",
-    "Manager Keuangan",
-    "Manager Teknik",
-    "Business Development",
-    "Promosi & CS",
-    "Kabag. Promosi & CS",
-    "Supervisor Civil & Architectural",
+    "Manager Marketing", "Manager Umum & Personalia",
+    "Manager Keuangan", "Manager Teknik",
+    "Business Development", "Promosi & CS",
+    "Kabag. Promosi & CS", "Supervisor Civil & Architectural",
 ]
 
 def is_direksi(role):
     return role in ROLE_DIREKSI
 
-def is_sekretaris(role):
-    return role == "Sekretaris Direksi"
+def is_readonly_monitor(role):
+    return role in ROLE_READONLY_MONITOR
 
 def is_manager_or_nonstruktural(role):
     return role in ROLE_MANAGER_NONSTRUKTURAL
@@ -68,10 +66,8 @@ def show_monitoring():
         }
         .task-row-approved {
             background: #F0FDF4; padding: 16px 20px; border-radius: 12px;
-            border: 1px solid #D1FAE5; border-left: 4px solid #10B981;
-            margin-bottom: 8px;
+            border: 1px solid #D1FAE5; border-left: 4px solid #10B981; margin-bottom: 8px;
         }
-
         .log-card {
             background: #F8FAFC; padding: 12px 16px;
             border-left: 4px solid #10B981; border-radius: 8px; margin-bottom: 10px;
@@ -85,20 +81,16 @@ def show_monitoring():
             background: white; border-left: 2px dashed #EF4444;
             border-radius: 0 8px 8px 0; font-size: 13px; margin-bottom: 10px;
         }
-
         .logbook-row {
             background: white; padding: 14px 18px; border-radius: 12px;
-            border: 1px solid #E2E8F0; border-left: 4px solid #10B981;
-            margin-bottom: 8px;
+            border: 1px solid #E2E8F0; border-left: 4px solid #10B981; margin-bottom: 8px;
         }
-
         .readonly-banner {
             background: #EFF6FF; border: 1px solid #BFDBFE;
             border-left: 4px solid #3B82F6; border-radius: 10px;
             padding: 10px 14px; margin-bottom: 16px;
             font-size: 13px; color: #1D4ED8;
         }
-
         section.main button[kind="primary"],
         section.main div[data-testid="stFormSubmitButton"] > button {
             background: linear-gradient(135deg,#10B981,#059669) !important;
@@ -109,8 +101,6 @@ def show_monitoring():
             background: transparent !important; color: #EF4444 !important;
             border: 1px solid rgba(239,68,68,.3) !important; border-radius: 8px !important;
         }
-        .st-key-del_task button:hover { background: rgba(239,68,68,.06) !important; }
-
         .stTabs [data-baseweb="tab-list"] {
             gap:4px; background:#F1F5F9; padding:4px; border-radius:10px;
         }
@@ -132,41 +122,25 @@ def show_monitoring():
         render_edit_action(user)
         return
 
-    # Direktur & Direktur Utama: 3 tab (termasuk logbook)
     if is_direksi(role):
         tab_non_rutin, tab_approved, tab_rutin = st.tabs([
             "Non-Rutinitas (Aktif)",
             "Selesai & Disetujui",
             "Pantau Logbook Rutinitas",
         ])
-        with tab_non_rutin:
-            render_list(user, only_approved=False)
-        with tab_approved:
-            render_list(user, only_approved=True)
-        with tab_rutin:
-            render_logbook_monitoring(user)
+        with tab_non_rutin:  render_list(user, only_approved=False)
+        with tab_approved:   render_list(user, only_approved=True)
+        with tab_rutin:      render_logbook_monitoring(user)
 
-    # Sekretaris Direksi: 2 tab, bisa lihat semua tapi review/hapus terbatas
-    elif is_sekretaris(role):
+    elif is_readonly_monitor(role) or is_manager_or_nonstruktural(role):
+        # Sekretaris Direksi, Staff Adm. Marketing, Manager, Nonstruktural
+        # semua dapat 2 tab (tanpa logbook)
         tab_non_rutin, tab_approved = st.tabs([
             "Non-Rutinitas (Aktif)",
             "Selesai & Disetujui",
         ])
-        with tab_non_rutin:
-            render_list(user, only_approved=False)
-        with tab_approved:
-            render_list(user, only_approved=True)
-
-    # Manager & Nonstruktural lainnya: 2 tab
-    elif is_manager_or_nonstruktural(role):
-        tab_non_rutin, tab_approved = st.tabs([
-            "Non-Rutinitas (Aktif)",
-            "Selesai & Disetujui",
-        ])
-        with tab_non_rutin:
-            render_list(user, only_approved=False)
-        with tab_approved:
-            render_list(user, only_approved=True)
+        with tab_non_rutin: render_list(user, only_approved=False)
+        with tab_approved:  render_list(user, only_approved=True)
 
     else:
         st.warning("Anda tidak memiliki akses ke halaman ini.")
@@ -180,43 +154,39 @@ def get_tasks_for_user(user):
 
     if is_direksi(role):
         placeholders = ",".join("?" * len(ROLE_MANAGER_NONSTRUKTURAL))
-        tasks = fetch_all(f"""
+        return fetch_all(f"""
             SELECT t.*,
-                   ua.nama  as nama_assigner,  ua.role  as role_assigner,  ua.divisi as divisi_assigner,
-                   ub.nama  as nama_karyawan,  ub.role  as role_karyawan,  ub.divisi as divisi_karyawan
+                   ua.nama as nama_assigner, ua.role as role_assigner, ua.divisi as divisi_assigner,
+                   ub.nama as nama_karyawan, ub.role as role_karyawan, ub.divisi as divisi_karyawan
             FROM tasks t
-            JOIN users ua ON t.assigned_by  = ua.id
-            JOIN users ub ON t.assigned_to  = ub.id
-            WHERE ua.role IN ({placeholders})
-               OR ub.role IN ({placeholders})
+            JOIN users ua ON t.assigned_by = ua.id
+            JOIN users ub ON t.assigned_to = ub.id
+            WHERE ua.role IN ({placeholders}) OR ub.role IN ({placeholders})
             ORDER BY t.tanggal_assign DESC
         """, ROLE_MANAGER_NONSTRUKTURAL * 2)
 
-    elif is_sekretaris(role):
-        # Sekretaris bisa lihat:
-        # 1. Tugas yang dia sendiri assign (ke siapapun)
-        # 2. Tugas antar sesama ROLE_SEKRETARIS_DAPAT_PANTAU (read-only)
+    elif is_readonly_monitor(role):
+        # Bisa lihat SEMUA tugas (termasuk yang di-assign direksi ke manager)
+        # tapi aksi review/hapus hanya untuk tugas yang dia assign sendiri
         all_roles = ROLE_SEKRETARIS_DAPAT_PANTAU
         placeholders = ",".join("?" * len(all_roles))
-        tasks = fetch_all(f"""
+        return fetch_all(f"""
             SELECT t.*,
-                   ua.nama  as nama_assigner,  ua.role  as role_assigner,  ua.divisi as divisi_assigner,
-                   ub.nama  as nama_karyawan,  ub.role  as role_karyawan,  ub.divisi as divisi_karyawan
+                   ua.nama as nama_assigner, ua.role as role_assigner, ua.divisi as divisi_assigner,
+                   ub.nama as nama_karyawan, ub.role as role_karyawan, ub.divisi as divisi_karyawan
             FROM tasks t
             JOIN users ua ON t.assigned_by = ua.id
             JOIN users ub ON t.assigned_to = ub.id
             WHERE t.assigned_by = ?
-               OR (
-                   (ua.role IN ({placeholders}) OR ub.role IN ({placeholders}))
-               )
+               OR (ua.role IN ({placeholders}) OR ub.role IN ({placeholders}))
             ORDER BY t.tanggal_assign DESC
         """, [user["id"]] + all_roles + all_roles)
 
     elif is_manager_or_nonstruktural(role):
-        tasks = fetch_all("""
+        return fetch_all("""
             SELECT t.*,
-                   ua.nama  as nama_assigner,  ua.role  as role_assigner,  ua.divisi as divisi_assigner,
-                   ub.nama  as nama_karyawan,  ub.role  as role_karyawan,  ub.divisi as divisi_karyawan
+                   ua.nama as nama_assigner, ua.role as role_assigner, ua.divisi as divisi_assigner,
+                   ub.nama as nama_karyawan, ub.role as role_karyawan, ub.divisi as divisi_karyawan
             FROM tasks t
             JOIN users ua ON t.assigned_by = ua.id
             JOIN users ub ON t.assigned_to = ub.id
@@ -224,22 +194,19 @@ def get_tasks_for_user(user):
             ORDER BY t.tanggal_assign DESC
         """, [user["id"]])
 
-    else:
-        tasks = []
-
-    return tasks
+    return []
 
 
 # =========================================================================
-# CEK APAKAH USER BOLEH REVIEW/HAPUS TUGAS INI
+# CEK HAK MODIFIKASI
 # =========================================================================
 def can_modify_task(user, task):
     """
-    Sekretaris Direksi hanya boleh review/hapus tugas yang dia sendiri assign.
-    Direksi dan Manager/Nonstruktural lainnya boleh semua.
+    Readonly monitor (Sekretaris Direksi, Staff Adm. Marketing):
+    hanya boleh review/hapus tugas yang dia sendiri assign.
+    Role lain: bebas.
     """
-    role = user["role"]
-    if is_sekretaris(role):
+    if is_readonly_monitor(user["role"]):
         return task["assigned_by"] == user["id"]
     return True
 
@@ -257,7 +224,7 @@ def render_list(user, only_approved=False):
                 <p>Evaluasi hasil kerja instruksi khusus tim dan berikan keputusan.</p>
             </div>
         """, unsafe_allow_html=True)
-        if is_sekretaris(role):
+        if is_readonly_monitor(role):
             st.markdown("""
                 <div class="readonly-banner">
                     ℹ️ Anda dapat memantau semua tugas di bawah ini.
@@ -274,17 +241,17 @@ def render_list(user, only_approved=False):
         """, unsafe_allow_html=True)
 
     tasks = get_tasks_for_user(user)
-
     if not tasks:
         st.info("Belum ada tugas untuk dimonitor.")
         return
+
+    tasks = [t for t in tasks if t["status_task"].lower() == ("approved" if only_approved else t["status_task"].lower() and t["status_task"].lower() != "approved")]
 
     if only_approved:
         tasks = [t for t in tasks if t["status_task"].lower() == "approved"]
     else:
         tasks = [t for t in tasks if t["status_task"].lower() != "approved"]
 
-    # ── Filter UI ──
     with st.container(border=True):
         if not only_approved:
             f1, f2, f3 = st.columns(3)
@@ -308,18 +275,14 @@ def render_list(user, only_approved=False):
                 stage1  = [t for t in tasks if t["divisi_karyawan"] == sel_div] if sel_div != "Semua Divisi" else tasks
             with f2:
                 c_start, c_end = st.columns(2)
-                with c_start:
-                    sel_start = st.date_input("Dari Tanggal", value=date.today() - timedelta(days=30), key="f_start_ap")
-                with c_end:
-                    sel_end = st.date_input("Sampai Tanggal", value=date.today(), key="f_end_ap")
+                with c_start: sel_start = st.date_input("Dari Tanggal", value=date.today()-timedelta(days=30), key="f_start_ap")
+                with c_end:   sel_end   = st.date_input("Sampai Tanggal", value=date.today(), key="f_end_ap")
                 stage2 = []
                 for t in stage1:
                     try:
                         td = datetime.strptime(t["tanggal_assign"][:10], "%Y-%m-%d").date()
-                        if sel_start <= td <= sel_end:
-                            stage2.append(t)
-                    except:
-                        continue
+                        if sel_start <= td <= sel_end: stage2.append(t)
+                    except: continue
             with f3:
                 nama_opts = ["Semua Karyawan"] + sorted(set(t["nama_karyawan"] for t in stage2 if t["nama_karyawan"]))
                 sel_nama  = st.selectbox("Karyawan", nama_opts, key="f_nama_ap")
@@ -367,7 +330,6 @@ def render_list(user, only_approved=False):
                         st.toast(f"Tugas '{t['judul']}' dihapus.")
                         st.rerun()
                 else:
-                    # Read-only: hanya tombol detail
                     if st.button(":material/search: Detail", key=f"det_ro_{t['id']}",
                                  use_container_width=True):
                         st.session_state["selected_task_id"] = t["id"]
@@ -407,10 +369,9 @@ def render_edit_action(user):
         </div>
     """, unsafe_allow_html=True)
 
-    # Cek apakah user boleh melakukan aksi di halaman detail ini
     boleh_aksi = can_modify_task(user, task)
 
-    if is_sekretaris(user["role"]) and not boleh_aksi:
+    if is_readonly_monitor(user["role"]) and not boleh_aksi:
         st.markdown("""
             <div class="readonly-banner">
                 👁️ Anda melihat tugas ini dalam mode <strong>read-only</strong>.
@@ -480,7 +441,7 @@ def render_edit_action(user):
 
     with col_b:
         if boleh_aksi:
-            options = ["assigned", "submitted", "revision", "approved"]
+            options = ["assigned","submitted","revision","approved"]
             cur     = task["status_task"].lower()
             idx     = options.index(cur) if cur in options else 0
 
@@ -517,7 +478,6 @@ def render_edit_action(user):
                         st.session_state["mon_view"] = "list"
                         st.rerun()
         else:
-            # Read-only: tampilkan info status saja tanpa form aksi
             with st.container(border=True):
                 st.markdown("**Informasi Tugas**")
                 status = task["status_task"].lower()
@@ -578,7 +538,6 @@ def render_logbook_monitoring(user):
     m1, m2 = st.columns(2)
     m1.metric("Total Entri Logbook", len(records))
     m2.metric("Hari Kerja Aktif", f"{total_hari} hari")
-
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
     for r in records:
