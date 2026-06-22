@@ -164,6 +164,13 @@ def show_main_app():
             ("Monitoring", "monitoring"),
             ("Profil",     "person"),
         ]
+    elif role == "Staff Adm. Marketing":
+        menu_items = [
+            ("Dashboard",  "dashboard"),
+            ("Tugas Saya", "task"),
+            ("Monitoring", "monitoring"),
+            ("Profil",     "person"),
+        ]
     else:
         menu_items = [
             ("Dashboard",  "dashboard"),
