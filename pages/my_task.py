@@ -72,18 +72,25 @@ def get_jobdesc_templates(role, divisi, kategori):
 
 @st.cache_data(ttl=30)
 def get_logbook_job_list(user_id):
-    return fetch_all(
-        "SELECT DISTINCT jt.nama_tugas FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id WHERE rl.user_id=?",
-        (user_id,)
-    )
+    # Solusi 1: Menggunakan LEFT JOIN dan COALESCE agar template yang dihapus tetap tampil di pilihan filter
+    return fetch_all("""
+        SELECT DISTINCT COALESCE(jt.nama_tugas, 'Tugas Rutin (Template Dihapus)') as nama_tugas 
+        FROM routine_logbooks rl 
+        LEFT JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id 
+        WHERE rl.user_id=?
+    """, (user_id,))
 
 @st.cache_data(ttl=15)
 def get_logbook_history(user_id):
+    # Solusi 1: Menggunakan LEFT JOIN agar logbook dengan jobdesc_id=NULL tidak ikut hilang dari riwayat tabel
     return fetch_all("""
-        SELECT rl.id, rl.tanggal_logbook, rl.keterangan_progres, rl.link_file,
-               rl.tanggal_input, jt.nama_tugas, jt.kategori_periodik
-        FROM routine_logbooks rl JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id
-        WHERE rl.user_id=? ORDER BY rl.tanggal_logbook DESC, rl.tanggal_input DESC
+        SELECT rl.id, rl.tanggal_logbook, rl.keterangan_progres, rl.link_file, rl.tanggal_input, 
+               COALESCE(jt.nama_tugas, 'Tugas Rutin (Template Dihapus)') as nama_tugas, 
+               COALESCE(jt.kategori_periodik, 'Harian/Lainnya') as kategori_periodik
+        FROM routine_logbooks rl 
+        LEFT JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id
+        WHERE rl.user_id=? 
+        ORDER BY rl.tanggal_logbook DESC, rl.tanggal_input DESC
     """, (user_id,))
 
 @st.cache_data(ttl=15)
@@ -95,7 +102,6 @@ def get_assigned_tasks(user_id):
 
 @st.cache_data(ttl=10)
 def get_all_submissions(task_id):
-    """Ambil semua riwayat submission untuk satu task, terbaru di atas."""
     return fetch_all(
         "SELECT * FROM submissions WHERE task_id=? ORDER BY id DESC",
         (task_id,)
@@ -103,7 +109,6 @@ def get_all_submissions(task_id):
 
 @st.cache_data(ttl=10)
 def get_all_feedback(task_id):
-    """Ambil semua riwayat feedback untuk satu task, terbaru di atas."""
     return fetch_all("""
         SELECT f.komentar, f.tanggal_ditulis, s.tanggal_submit, s.link_drive
         FROM feedback f
@@ -235,7 +240,6 @@ def show_my_task():
         templates = get_jobdesc_templates(user["role"], user["divisi"], kategori_periodik)
         template_options = {t["nama_tugas"]: t["id"] for t in templates}
         
-        # Buat opsi dropdown list judul pekerjaan
         pilihan_options = list(template_options.keys())
         if not is_direksi:
             pilihan_options.append("Lainnya...")
@@ -244,7 +248,6 @@ def show_my_task():
             pilihan_tugas = st.selectbox("Judul Pekerjaan", pilihan_options, key="input_pilihan_tugas")
 
         with st.form(key="form_logbook_rutin", clear_on_submit=True):
-            # Jika memilih Lainnya..., tampilkan input teks judul kustom di area yang sama
             nama_tugas_kustom = ""
             if pilihan_tugas == "Lainnya...":
                 nama_tugas_kustom = st.text_input("Judul Tugas Rutinitas Baru", placeholder="Masukkan nama tugas kustom Anda di sini...")
@@ -261,10 +264,8 @@ def show_my_task():
                     now_ts = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")
                     jobdesc_id = None
 
-                    # Handling penambahan tugas kustom baru ke master template
                     if pilihan_tugas == "Lainnya...":
                         tugas_clean = nama_tugas_kustom.strip()
-                        # Cek apakah sudah pernah dibuat sebelumnya agar tidak duplikat
                         existing = fetch_all(
                             "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND role=? AND divisi=? AND kategori_periodik=?",
                             (tugas_clean, user["role"], user["divisi"], kategori_periodik)
@@ -302,10 +303,12 @@ def show_my_task():
                         st.success(f"Logbook {kategori_periodik.lower()} berhasil disimpan!")
                         st.rerun()
 
-        # Fitur Hapus/Kelola Template Tugas Rutinitas Mandiri (Hanya muncul jika bukan Direksi)
+        # =========================================================================
+        # FITUR HAPUS TEMPLATE MANDIRI (IMPLEMENTASI SOLUSI 1)
+        # =========================================================================
         if not is_direksi:
             with st.expander("🛠️ Kelola & Hapus Tugas Rutinitas Mandiri"):
-                st.caption("Berikut adalah daftar judul tugas rutin kustom yang Anda buat sendiri. Anda dapat menghapusnya jika sudah tidak digunakan.")
+                st.caption("Berikut adalah daftar judul tugas rutin kustom yang Anda buat sendiri. Anda dapat menghapusnya tanpa memengaruhi riwayat catatan yang sudah tersimpan.")
                 custom_templates = fetch_all(
                     "SELECT id, nama_tugas, kategori_periodik FROM jobdesc_templates WHERE assigned_by_id = ? ORDER BY kategori_periodik, nama_tugas",
                     (user["id"],)
@@ -319,8 +322,21 @@ def show_my_task():
                             st.markdown(f"**[{ct['kategori_periodik']}]** {ct['nama_tugas']}")
                         with col_ct_btn:
                             if st.button("Hapus", key=f"del_ct_tmpl_{ct['id']}", use_container_width=True):
-                                execute_query("DELETE FROM jobdesc_templates WHERE id = ?", (ct["id"],))
+                                # Langkah 1: Putuskan hubungan relasi foreign key di database dengan merubahnya ke NULL
+                                execute_query(
+                                    "UPDATE routine_logbooks SET jobdesc_id = NULL WHERE jobdesc_id = ?",
+                                    (ct["id"],)
+                                )
+                                # Langkah 2: Sekarang aman untuk menghapus data template utamanya
+                                execute_query(
+                                    "DELETE FROM jobdesc_templates WHERE id = ?",
+                                    (ct["id"],)
+                                )
+                                # Langkah 3: Clear cache agar UI dan tabel riwayat langsung diperbarui
                                 get_jobdesc_templates.clear()
+                                get_logbook_history.clear()
+                                get_logbook_job_list.clear()
+                                
                                 st.success(f"Tugas '{ct['nama_tugas']}' berhasil dihapus dari daftar dropdown.")
                                 st.rerun()
 
@@ -425,10 +441,9 @@ def show_my_task():
                         st.rerun()
 
     # =========================================================================
-    # HELPER: render detail submission + feedback history (expander)
+    # TAB 2 & TAB 3: LOGIKA UTK TUGAS NON-RUTINITAS (TIDAK BERUBAH)
     # =========================================================================
     def render_detail_expander(task, show_submit_form=True):
-        """Expander berisi riwayat semua submission dan feedback untuk satu task."""
         submissions = get_all_submissions(task["id"])
         feedbacks   = get_all_feedback(task["id"])
         status      = task["status_task"].lower()
@@ -438,8 +453,6 @@ def show_my_task():
         label     = f":material/history: Riwayat Pengumpulan ({sub_count}) & Feedback ({fb_count})"
 
         with st.expander(label, expanded=(status == "revision")):
-
-            # ── Feedback dari atasan ──────────────────────────────────────
             if feedbacks:
                 st.markdown('<p class="timeline-label">💬 Feedback dari Atasan</p>', unsafe_allow_html=True)
                 for fb in feedbacks:
@@ -456,7 +469,6 @@ def show_my_task():
 
             st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-            # ── Riwayat semua pengumpulan ─────────────────────────────────
             if submissions:
                 st.markdown('<p class="timeline-label">📎 Riwayat Pengumpulan</p>', unsafe_allow_html=True)
                 for i, sub in enumerate(submissions):
@@ -479,7 +491,6 @@ def show_my_task():
             else:
                 st.caption("Belum ada pengumpulan.")
 
-            # ── Form kirim / ubah (hanya jika status memungkinkan) ────────
             if show_submit_form and status in ["assigned", "revision", "submitted"]:
                 st.markdown("<hr style='border-color:#E2E8F0;margin:12px 0'>", unsafe_allow_html=True)
                 latest_sub = submissions[0] if submissions else None
@@ -527,7 +538,6 @@ def show_my_task():
                                         )
                                 if final_link:
                                     now = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")
-                                    # Selalu INSERT row baru — riwayat terjaga
                                     execute_query(
                                         "INSERT INTO submissions (task_id, link_drive, keterangan, tanggal_submit) VALUES (?,?,?,?)",
                                         (task["id"], final_link, ket_submit, now)
@@ -547,9 +557,6 @@ def show_my_task():
                             st.session_state[f"editing_{task['id']}"] = False
                             st.rerun()
 
-    # =========================================================================
-    # HELPER: render task card header
-    # =========================================================================
     def render_task_card(task, show_actions=True):
         status = task["status_task"].lower()
         badge_map = {
@@ -561,7 +568,6 @@ def show_my_task():
         badge_cls, badge_txt = badge_map.get(status, ("badge-assigned", status.capitalize()))
         card_cls = "task-card-approved" if status == "approved" else "task-card"
 
-        # Banner revisi di atas card jika ada feedback terbaru
         if status == "revision":
             fb_list = get_all_feedback(task["id"])
             if fb_list:
@@ -593,13 +599,9 @@ def show_my_task():
             </div>
         """, unsafe_allow_html=True)
 
-        # Expander detail — selalu tampil di semua status
         render_detail_expander(task, show_submit_form=show_actions)
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
 
-    # =========================================================================
-    # TAB 2: NON-RUTINITAS AKTIF
-    # =========================================================================
     with tab_non_rutin:
         fc1, fc2, fc3, fc4 = st.columns([1.5, 1, 1, 1])
         with fc1: search_q   = st.text_input(":material/search: Cari Judul", placeholder="Kata kunci...", key="search_nr")
@@ -631,9 +633,6 @@ def show_my_task():
             for task in filtered_active:
                 render_task_card(task, show_actions=True)
 
-    # =========================================================================
-    # TAB 3: TUGAS SELESAI & DISETUJUI
-    # =========================================================================
     with tab_selesai:
         st.markdown('<p style="font-size:15px;font-weight:600;color:#1E293B;margin-bottom:4px;">Arsip tugas yang telah disetujui atasan.</p>', unsafe_allow_html=True)
 
