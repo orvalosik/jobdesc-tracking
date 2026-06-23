@@ -304,7 +304,7 @@ def show_my_task():
                         st.rerun()
 
         # =========================================================================
-        # FITUR HAPUS TEMPLATE MANDIRI (IMPLEMENTASI SOLUSI 1)
+        # FITUR HAPUS TEMPLATE MANDIRI (SISTEM BACKUP DUMMY - FIX NOT NULL CONSTRAINT)
         # =========================================================================
         if not is_direksi:
             with st.expander("🛠️ Kelola & Hapus Tugas Rutinitas Mandiri"):
@@ -317,22 +317,51 @@ def show_my_task():
                     st.info("Belum ada tugas rutinitas kustom yang Anda buat.")
                 else:
                     for ct in custom_templates:
+                        # Jangan biarkan template backup utama ikut dihapus lewat looping ini
+                        if "Template Dihapus" in ct["nama_tugas"]:
+                            continue
+                            
                         col_ct_info, col_ct_btn = st.columns([8, 2])
                         with col_ct_info:
                             st.markdown(f"**[{ct['kategori_periodik']}]** {ct['nama_tugas']}")
                         with col_ct_btn:
                             if st.button("Hapus", key=f"del_ct_tmpl_{ct['id']}", use_container_width=True):
-                                # Langkah 1: Putuskan hubungan relasi foreign key di database dengan merubahnya ke NULL
-                                execute_query(
-                                    "UPDATE routine_logbooks SET jobdesc_id = NULL WHERE jobdesc_id = ?",
-                                    (ct["id"],)
+                                # 1. Cek apakah template backup untuk menampung logbook yatim sudah ada
+                                backup_name = "Tugas Rutin (Template Dihapus)"
+                                backup_exist = fetch_all(
+                                    "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND assigned_by_id=?", 
+                                    (backup_name, user["id"])
                                 )
-                                # Langkah 2: Sekarang aman untuk menghapus data template utamanya
+                                
+                                if backup_exist:
+                                    backup_id = backup_exist[0]["id"]
+                                else:
+                                    # Jika belum ada, buatkan satu dummy template penampung
+                                    execute_query(
+                                        "INSERT INTO jobdesc_templates (nama_tugas, divisi, role, kategori_periodik, assigned_by_id) VALUES (?,?,?,?,?)",
+                                        (backup_name, user["divisi"], user["role"], ct["kategori_periodik"], user["id"])
+                                    )
+                                    get_jobdesc_templates.clear()
+                                    new_backup = fetch_all(
+                                        "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND assigned_by_id=?", 
+                                        (backup_name, user["id"])
+                                    )
+                                    backup_id = new_backup[0]["id"] if new_backup else None
+
+                                if backup_id:
+                                    # 2. Alihkan foreign key dari id lama ke ID backup (Bukan ke NULL, jadi aman dari NOT NULL constraint!)
+                                    execute_query(
+                                        "UPDATE routine_logbooks SET jobdesc_id = ? WHERE jobdesc_id = ?",
+                                        (backup_id, ct["id"])
+                                    )
+                                
+                                # 3. Sekarang aman untuk menghapus data template aslinya
                                 execute_query(
                                     "DELETE FROM jobdesc_templates WHERE id = ?",
                                     (ct["id"],)
                                 )
-                                # Langkah 3: Clear cache agar UI dan tabel riwayat langsung diperbarui
+                                
+                                # 4. Clear semua cache agar UI langsung segar kembali
                                 get_jobdesc_templates.clear()
                                 get_logbook_history.clear()
                                 get_logbook_job_list.clear()
