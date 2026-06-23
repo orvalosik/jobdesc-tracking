@@ -244,8 +244,6 @@ def render_list(user, only_approved=False):
         st.info("Belum ada tugas untuk dimonitor.")
         return
 
-    tasks = [t for t in tasks if t["status_task"].lower() == ("approved" if only_approved else t["status_task"].lower() and t["status_task"].lower() != "approved")]
-
     if only_approved:
         tasks = [t for t in tasks if t["status_task"].lower() == "approved"]
     else:
