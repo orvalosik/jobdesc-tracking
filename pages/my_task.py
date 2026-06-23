@@ -61,34 +61,34 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
 
 
 # =========================================================================
-# QUERY HELPERS
+# QUERY HELPERS (MENGGUNAKAN SISTEM IS_ACTIVE)
 # =========================================================================
 @st.cache_data(ttl=30)
 def get_jobdesc_templates(role, divisi, kategori):
+    # Hanya ambil template yang is_active = 1 untuk dropdown input
     return fetch_all(
-        "SELECT id, nama_tugas, assigned_by_id FROM jobdesc_templates WHERE role=? AND divisi=? AND kategori_periodik=? ORDER BY nama_tugas",
+        "SELECT id, nama_tugas, assigned_by_id FROM jobdesc_templates WHERE role=? AND divisi=? AND kategori_periodik=? AND is_active=1 ORDER BY nama_tugas",
         (role, divisi, kategori)
     )
 
 @st.cache_data(ttl=30)
 def get_logbook_job_list(user_id):
-    # Solusi 1: Menggunakan LEFT JOIN dan COALESCE agar template yang dihapus tetap tampil di pilihan filter
+    # Tetap gunakan JOIN biasa karena templatenya tidak benar-benar dihapus dari DB
     return fetch_all("""
-        SELECT DISTINCT COALESCE(jt.nama_tugas, 'Tugas Rutin (Template Dihapus)') as nama_tugas 
+        SELECT DISTINCT jt.nama_tugas 
         FROM routine_logbooks rl 
-        LEFT JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id 
+        JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id 
         WHERE rl.user_id=?
     """, (user_id,))
 
 @st.cache_data(ttl=15)
 def get_logbook_history(user_id):
-    # Solusi 1: Menggunakan LEFT JOIN agar logbook dengan jobdesc_id=NULL tidak ikut hilang dari riwayat tabel
+    # Menampilkan judul asli bawaan template yang tersimpan lama di database
     return fetch_all("""
         SELECT rl.id, rl.tanggal_logbook, rl.keterangan_progres, rl.link_file, rl.tanggal_input, 
-               COALESCE(jt.nama_tugas, 'Tugas Rutin (Template Dihapus)') as nama_tugas, 
-               COALESCE(jt.kategori_periodik, 'Harian/Lainnya') as kategori_periodik
+               jt.nama_tugas, jt.kategori_periodik
         FROM routine_logbooks rl 
-        LEFT JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id
+        JOIN jobdesc_templates jt ON rl.jobdesc_id=jt.id
         WHERE rl.user_id=? 
         ORDER BY rl.tanggal_logbook DESC, rl.tanggal_input DESC
     """, (user_id,))
@@ -266,20 +266,22 @@ def show_my_task():
 
                     if pilihan_tugas == "Lainnya...":
                         tugas_clean = nama_tugas_kustom.strip()
+                        # Cek template yang aktif saja
                         existing = fetch_all(
-                            "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND role=? AND divisi=? AND kategori_periodik=?",
+                            "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND role=? AND divisi=? AND kategori_periodik=? AND is_active=1",
                             (tugas_clean, user["role"], user["divisi"], kategori_periodik)
                         )
                         if existing:
                             jobdesc_id = existing[0]["id"]
                         else:
+                            # Secara default, kolom is_active akan terisi nilai 1
                             execute_query(
                                 "INSERT INTO jobdesc_templates (nama_tugas, divisi, role, kategori_periodik, assigned_by_id) VALUES (?,?,?,?,?)",
                                 (tugas_clean, user["divisi"], user["role"], kategori_periodik, user["id"])
                             )
                             get_jobdesc_templates.clear()
                             new_row = fetch_all(
-                                "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND role=? AND divisi=? AND kategori_periodik=?",
+                                "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND role=? AND divisi=? AND kategori_periodik=? AND is_active=1",
                                 (tugas_clean, user["role"], user["divisi"], kategori_periodik)
                             )
                             if new_row:
@@ -304,69 +306,36 @@ def show_my_task():
                         st.rerun()
 
         # =========================================================================
-        # FITUR HAPUS TEMPLATE MANDIRI (SISTEM BACKUP DUMMY - FIX NOT NULL CONSTRAINT)
+        # FITUR HAPUS TEMPLATE MANDIRI (IMPLEMENTASI SOLUSI 2 - SOFT DELETE)
         # =========================================================================
         if not is_direksi:
             with st.expander("🛠️ Kelola & Hapus Tugas Rutinitas Mandiri"):
-                st.caption("Berikut adalah daftar judul tugas rutin kustom yang Anda buat sendiri. Anda dapat menghapusnya tanpa memengaruhi riwayat catatan yang sudah tersimpan.")
+                st.caption("Berikut adalah daftar judul tugas rutin kustom yang Anda buat sendiri. Anda dapat menyembunyikannya dari dropdown tanpa memengaruhi riwayat catatan aslinya.")
+                # Hanya tampilkan template milik user yang statusnya is_active = 1
                 custom_templates = fetch_all(
-                    "SELECT id, nama_tugas, kategori_periodik FROM jobdesc_templates WHERE assigned_by_id = ? ORDER BY kategori_periodik, nama_tugas",
+                    "SELECT id, nama_tugas, kategori_periodik FROM jobdesc_templates WHERE assigned_by_id = ? AND is_active = 1 ORDER BY kategori_periodik, nama_tugas",
                     (user["id"],)
                 )
                 if not custom_templates:
-                    st.info("Belum ada tugas rutinitas kustom yang Anda buat.")
+                    st.info("Belum ada tugas rutinitas kustom aktif yang Anda buat.")
                 else:
                     for ct in custom_templates:
-                        # Jangan biarkan template backup utama ikut dihapus lewat looping ini
-                        if "Template Dihapus" in ct["nama_tugas"]:
-                            continue
-                            
                         col_ct_info, col_ct_btn = st.columns([8, 2])
                         with col_ct_info:
                             st.markdown(f"**[{ct['kategori_periodik']}]** {ct['nama_tugas']}")
                         with col_ct_btn:
                             if st.button("Hapus", key=f"del_ct_tmpl_{ct['id']}", use_container_width=True):
-                                # 1. Cek apakah template backup untuk menampung logbook yatim sudah ada
-                                backup_name = "Tugas Rutin (Template Dihapus)"
-                                backup_exist = fetch_all(
-                                    "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND assigned_by_id=?", 
-                                    (backup_name, user["id"])
-                                )
-                                
-                                if backup_exist:
-                                    backup_id = backup_exist[0]["id"]
-                                else:
-                                    # Jika belum ada, buatkan satu dummy template penampung
-                                    execute_query(
-                                        "INSERT INTO jobdesc_templates (nama_tugas, divisi, role, kategori_periodik, assigned_by_id) VALUES (?,?,?,?,?)",
-                                        (backup_name, user["divisi"], user["role"], ct["kategori_periodik"], user["id"])
-                                    )
-                                    get_jobdesc_templates.clear()
-                                    new_backup = fetch_all(
-                                        "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND assigned_by_id=?", 
-                                        (backup_name, user["id"])
-                                    )
-                                    backup_id = new_backup[0]["id"] if new_backup else None
-
-                                if backup_id:
-                                    # 2. Alihkan foreign key dari id lama ke ID backup (Bukan ke NULL, jadi aman dari NOT NULL constraint!)
-                                    execute_query(
-                                        "UPDATE routine_logbooks SET jobdesc_id = ? WHERE jobdesc_id = ?",
-                                        (backup_id, ct["id"])
-                                    )
-                                
-                                # 3. Sekarang aman untuk menghapus data template aslinya
+                                # Cukup ubah is_active menjadi 0. Data asli di DB tetap utuh, NOT NULL constraint aman!
                                 execute_query(
-                                    "DELETE FROM jobdesc_templates WHERE id = ?",
+                                    "UPDATE jobdesc_templates SET is_active = 0 WHERE id = ?",
                                     (ct["id"],)
                                 )
-                                
-                                # 4. Clear semua cache agar UI langsung segar kembali
+                                # Bersihkan semua cache terkait agar UI langsung ter-refresh otomatis
                                 get_jobdesc_templates.clear()
                                 get_logbook_history.clear()
                                 get_logbook_job_list.clear()
                                 
-                                st.success(f"Tugas '{ct['nama_tugas']}' berhasil dihapus dari daftar dropdown.")
+                                st.success(f"Tugas '{ct['nama_tugas']}' berhasil disembunyikan dari daftar dropdown.")
                                 st.rerun()
 
         st.markdown("<hr style='border-color:#E2E8F0; margin:20px 0'>", unsafe_allow_html=True)
