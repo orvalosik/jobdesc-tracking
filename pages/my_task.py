@@ -66,7 +66,7 @@ def upload_to_google_drive(uploaded_file, filename_on_drive, divisi_name):
 @st.cache_data(ttl=30)
 def get_jobdesc_templates(role, divisi, kategori):
     return fetch_all(
-        "SELECT id, nama_tugas FROM jobdesc_templates WHERE role=? AND divisi=? AND kategori_periodik=? ORDER BY nama_tugas",
+        "SELECT id, nama_tugas, assigned_by_id FROM jobdesc_templates WHERE role=? AND divisi=? AND kategori_periodik=? ORDER BY nama_tugas",
         (role, divisi, kategori)
     )
 
@@ -205,6 +205,7 @@ def show_my_task():
         st.stop()
 
     user = st.session_state["user"]
+    is_direksi = user.get("divisi") == "Dewan Direksi"
 
     st.markdown("""
         <div class="header-card">
@@ -229,24 +230,62 @@ def show_my_task():
         with col_tgl:
             tgl_logbook = st.date_input("Tanggal Aktivitas", value=date.today(), key="input_tgl_logbook")
         with col_kat:
-            kategori_periodik = st.selectbox("Kategori Periodik", ["Harian", "Bulanan", "Tahunan"], key="input_kategori_periodik")
+            kategori_periodik = st.selectbox("Kategori Periodik", ["Harian", "Mingguan", "Bulanan", "Tahunan"], key="input_kategori_periodik")
 
         templates = get_jobdesc_templates(user["role"], user["divisi"], kategori_periodik)
         template_options = {t["nama_tugas"]: t["id"] for t in templates}
+        
+        # Buat opsi dropdown list judul pekerjaan
+        pilihan_options = list(template_options.keys())
+        if not is_direksi:
+            pilihan_options.append("Lainnya...")
 
         with col_job:
-            pilihan_tugas = st.selectbox("Judul Pekerjaan", list(template_options.keys()), key="input_pilihan_tugas")
+            pilihan_tugas = st.selectbox("Judul Pekerjaan", pilihan_options, key="input_pilihan_tugas")
 
         with st.form(key="form_logbook_rutin", clear_on_submit=True):
+            # Jika memilih Lainnya..., tampilkan input teks judul kustom di area yang sama
+            nama_tugas_kustom = ""
+            if pilihan_tugas == "Lainnya...":
+                nama_tugas_kustom = st.text_input("Judul Tugas Rutinitas Baru", placeholder="Masukkan nama tugas kustom Anda di sini...")
+
             keterangan    = st.text_area("Keterangan Progres / Hasil Kerja", placeholder="Detailkan aktivitas yang Anda kerjakan...", height=120)
             uploaded_file = st.file_uploader(":material/attach_file: Lampiran Hasil Kerja (Opsional)", type=["pdf","xlsx","xls","png","jpg","jpeg"])
 
             if st.form_submit_button(":material/save: Simpan Logbook", use_container_width=True):
-                if not keterangan.strip():
+                if pilihan_tugas == "Lainnya..." and not nama_tugas_kustom.strip():
+                    st.error("Judul tugas kustom wajib diisi jika memilih opsi 'Lainnya...'.")
+                elif not keterangan.strip():
                     st.error("Keterangan tidak boleh kosong.")
                 else:
-                    now_ts     = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")
-                    jobdesc_id = template_options.get(pilihan_tugas)
+                    now_ts = datetime.now(WIB).strftime("%Y-%m-%d %H:%M:%S")
+                    jobdesc_id = None
+
+                    # Handling penambahan tugas kustom baru ke master template
+                    if pilihan_tugas == "Lainnya...":
+                        tugas_clean = nama_tugas_kustom.strip()
+                        # Cek apakah sudah pernah dibuat sebelumnya agar tidak duplikat
+                        existing = fetch_all(
+                            "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND role=? AND divisi=? AND kategori_periodik=?",
+                            (tugas_clean, user["role"], user["divisi"], kategori_periodik)
+                        )
+                        if existing:
+                            jobdesc_id = existing[0]["id"]
+                        else:
+                            execute_query(
+                                "INSERT INTO jobdesc_templates (nama_tugas, divisi, role, kategori_periodik, assigned_by_id) VALUES (?,?,?,?,?)",
+                                (tugas_clean, user["divisi"], user["role"], kategori_periodik, user["id"])
+                            )
+                            get_jobdesc_templates.clear()
+                            new_row = fetch_all(
+                                "SELECT id FROM jobdesc_templates WHERE nama_tugas=? AND role=? AND divisi=? AND kategori_periodik=?",
+                                (tugas_clean, user["role"], user["divisi"], kategori_periodik)
+                            )
+                            if new_row:
+                                jobdesc_id = new_row[0]["id"]
+                    else:
+                        jobdesc_id = template_options.get(pilihan_tugas)
+
                     if jobdesc_id:
                         final_link = None
                         if uploaded_file:
@@ -262,6 +301,28 @@ def show_my_task():
                         get_logbook_job_list.clear()
                         st.success(f"Logbook {kategori_periodik.lower()} berhasil disimpan!")
                         st.rerun()
+
+        # Fitur Hapus/Kelola Template Tugas Rutinitas Mandiri (Hanya muncul jika bukan Direksi)
+        if not is_direksi:
+            with st.expander("🛠️ Kelola & Hapus Tugas Rutinitas Mandiri"):
+                st.caption("Berikut adalah daftar judul tugas rutin kustom yang Anda buat sendiri. Anda dapat menghapusnya jika sudah tidak digunakan.")
+                custom_templates = fetch_all(
+                    "SELECT id, nama_tugas, kategori_periodik FROM jobdesc_templates WHERE assigned_by_id = ? ORDER BY kategori_periodik, nama_tugas",
+                    (user["id"],)
+                )
+                if not custom_templates:
+                    st.info("Belum ada tugas rutinitas kustom yang Anda buat.")
+                else:
+                    for ct in custom_templates:
+                        col_ct_info, col_ct_btn = st.columns([8, 2])
+                        with col_ct_info:
+                            st.markdown(f"**[{ct['kategori_periodik']}]** {ct['nama_tugas']}")
+                        with col_ct_btn:
+                            if st.button("Hapus", key=f"del_ct_tmpl_{ct['id']}", use_container_width=True):
+                                execute_query("DELETE FROM jobdesc_templates WHERE id = ?", (ct["id"],))
+                                get_jobdesc_templates.clear()
+                                st.success(f"Tugas '{ct['nama_tugas']}' berhasil dihapus dari daftar dropdown.")
+                                st.rerun()
 
         st.markdown("<hr style='border-color:#E2E8F0; margin:20px 0'>", unsafe_allow_html=True)
         st.markdown('<p style="font-size:15px;font-weight:600;color:#1E293B;margin-bottom:12px;">Riwayat Logbook</p>', unsafe_allow_html=True)
