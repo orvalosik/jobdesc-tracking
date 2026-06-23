@@ -153,17 +153,16 @@ def get_tasks_for_user(user):
     role = user["role"]
 
     if is_direksi(role):
-        placeholders = ",".join("?" * len(ROLE_MANAGER_NONSTRUKTURAL))
-        return fetch_all(f"""
+        # Direksi bisa lihat SEMUA tugas tanpa filter role
+        return fetch_all("""
             SELECT t.*,
                    ua.nama as nama_assigner, ua.role as role_assigner, ua.divisi as divisi_assigner,
                    ub.nama as nama_karyawan, ub.role as role_karyawan, ub.divisi as divisi_karyawan
             FROM tasks t
             JOIN users ua ON t.assigned_by = ua.id
             JOIN users ub ON t.assigned_to = ub.id
-            WHERE ua.role IN ({placeholders}) OR ub.role IN ({placeholders})
             ORDER BY t.tanggal_assign DESC
-        """, ROLE_MANAGER_NONSTRUKTURAL * 2)
+        """)
 
     elif is_readonly_monitor(role):
         # Bisa lihat SEMUA tugas (termasuk yang di-assign direksi ke manager)
