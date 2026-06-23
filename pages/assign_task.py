@@ -21,6 +21,15 @@ def show_assign_task():
     is_nonstruktur    = user_role in NONSTRUKTUR_ROLES
     is_setara_manager = is_manager or is_nonstruktur
 
+    # Cek apakah user memiliki bawahan di database (punya user lain yang atasan_id = id user ini)
+    punya_bawahan_rows = fetch_all("SELECT COUNT(*) as total FROM users WHERE atasan_id = ?", (user["id"],))
+    punya_bawahan = punya_bawahan_rows[0]["total"] > 0 if punya_bawahan_rows else False
+
+    # Hak akses ke halaman ini: Direksi, Setara Manager, ATAU siapa pun yang punya bawahan
+    if not (is_direksi or is_setara_manager or punya_bawahan):
+        st.warning("Anda tidak memiliki hak akses untuk halaman ini.")
+        return
+
     st.markdown("""
         <style>
         .header-card {
@@ -123,24 +132,32 @@ def show_assign_task():
             st.session_state["success_assign_nr"] = False
 
     # ================================================================
-    # DIREKSI
+    # KONDISI LOGIKA TAB BERDASARKAN KEPEMILIKAN BAWAHAN / DIREKSI
     # ================================================================
-    if is_direksi:
+    if is_direksi or punya_bawahan:
         tab1, tab2 = st.tabs(["Tugas Rutinitas", "Tugas Khusus (Non-Rutinitas)"])
-
+        
+        # ── TAB 1: KELOLA TEMPLATE RUTINAS ──
         with tab1:
             st.markdown('<p class="section-title">Kelola Template Tugas Rutin</p>', unsafe_allow_html=True)
-            st.info("Anda memiliki akses penuh untuk seluruh divisi.")
-
-            divisi_rows     = fetch_all("SELECT DISTINCT divisi FROM users WHERE divisi IS NOT NULL AND divisi != 'Dewan Direksi'")
-            list_divisi     = [d["divisi"] for d in divisi_rows]
-            selected_divisi = st.selectbox(":material/apartment: Divisi Target", list_divisi)
-
-            role_rows = fetch_all("SELECT DISTINCT role FROM users WHERE divisi = ? AND role IS NOT NULL", (selected_divisi,))
-            list_role = [r["role"] for r in role_rows if r["role"]]
+            
+            if is_direksi:
+                st.info("Anda memiliki akses penuh untuk seluruh divisi.")
+                divisi_rows = fetch_all("SELECT DISTINCT divisi FROM users WHERE divisi IS NOT NULL AND divisi != 'Dewan Direksi'")
+                list_divisi = [d["divisi"] for d in divisi_rows]
+                selected_divisi = st.selectbox(":material/apartment: Divisi Target", list_divisi)
+                
+                # DIREKSI BISA AMBIL SEMUA ROLE DI DIVISI TERSEBUT
+                role_rows = fetch_all("SELECT DISTINCT role FROM users WHERE divisi = ? AND role IS NOT NULL", (selected_divisi,))
+                list_role = [r["role"] for r in role_rows if r["role"]]
+            else:
+                st.info(f"Sebagai atasan, Anda mengatur template tugas rutin untuk bawahan di divisi **{user_divisi}**.")
+                selected_divisi = user_divisi
+                role_rows = fetch_all("SELECT DISTINCT role FROM users WHERE atasan_id = ? AND role IS NOT NULL", (user["id"],))
+                list_role = [r["role"] for r in role_rows if r["role"]]
 
             if not list_role:
-                st.warning("Tidak ditemukan jabatan pada divisi ini.")
+                st.warning("Tidak ditemukan jabatan bawahan yang tersedia.")
             else:
                 if "edit_id" not in st.session_state:
                     st.session_state["edit_id"] = None
@@ -171,12 +188,18 @@ def show_assign_task():
                 selected_filter = st.selectbox("Filter Jabatan", filter_options)
 
                 if selected_filter == "Semua Jabatan":
-                    existing_routines = fetch_all("SELECT * FROM jobdesc_templates WHERE divisi=? ORDER BY role, kategori_periodik", (selected_divisi,))
+                    if is_direksi:
+                        existing_routines = fetch_all("SELECT * FROM jobdesc_templates WHERE divisi=? ORDER BY role, kategori_periodik", (selected_divisi,))
+                    else:
+                        existing_routines = fetch_all("SELECT * FROM jobdesc_templates WHERE divisi=? AND assigned_by_id=? ORDER BY role, kategori_periodik", (selected_divisi, user["id"]))
                 else:
-                    existing_routines = fetch_all("SELECT * FROM jobdesc_templates WHERE divisi=? AND role=? ORDER BY kategori_periodik", (selected_divisi, selected_filter))
+                    if is_direksi:
+                        existing_routines = fetch_all("SELECT * FROM jobdesc_templates WHERE divisi=? AND role=? ORDER BY kategori_periodik", (selected_divisi, selected_filter))
+                    else:
+                        existing_routines = fetch_all("SELECT * FROM jobdesc_templates WHERE divisi=? AND role=? AND assigned_by_id=? ORDER BY kategori_periodik", (selected_divisi, selected_filter, user["id"]))
 
                 if not existing_routines:
-                    st.info("Belum ada template tugas untuk divisi ini.")
+                    st.info("Belum ada template tugas yang Anda buat.")
                 else:
                     for r in existing_routines:
                         col_card, col_btn = st.columns([8, 2])
@@ -225,76 +248,64 @@ def show_assign_task():
                                                           (edit_nama.strip(), edit_role, edit_periodik, r["id"]))
                                             st.success("Template diperbarui.")
                                             st.session_state["edit_id"] = None; st.rerun()
-
+        
+        # ── TAB 2: NON-RUTINITAS ──
         with tab2:
-            div_rows = fetch_all("SELECT DISTINCT divisi FROM users WHERE divisi != 'Dewan Direksi' AND divisi IS NOT NULL")
-            list_div_nr = ["Semua Divisi"] + [d["divisi"] for d in div_rows]
-            selected_divisi_nr = st.selectbox(":material/apartment: Filter Divisi", list_div_nr, key="div_nr")
+            if is_direksi:
+                div_rows = fetch_all("SELECT DISTINCT divisi FROM users WHERE divisi != 'Dewan Direksi' AND divisi IS NOT NULL")
+                list_div_nr = ["Semua Divisi"] + [d["divisi"] for d in div_rows]
+                selected_divisi_nr = st.selectbox(":material/apartment: Filter Divisi", list_div_nr, key="div_nr")
 
-            if selected_divisi_nr == "Semua Divisi":
-                subordinates = fetch_all("""
-                    SELECT id, nama, role, divisi FROM users
-                    WHERE id != ? AND (
-                        LOWER(role) LIKE '%manager%'
-                        OR LOWER(role) LIKE '%supervisor%'
-                        OR role IN ('Business Development','Sekretaris Direksi','Kabag. Promosi & CS')
-                    ) ORDER BY divisi, role
-                """, (user["id"],))
+                # DIREKSI: BISA MENGIRIM TUGAS KHUSUS KE SEMUA KARYAWAN DI SEMUA JABATAN
+                if selected_divisi_nr == "Semua Divisi":
+                    subordinates = fetch_all("""
+                        SELECT id, nama, role, divisi FROM users 
+                        WHERE id != ? AND divisi != 'Dewan Direksi'
+                        ORDER BY divisi, role
+                    """, (user["id"],))
+                else:
+                    subordinates = fetch_all("""
+                        SELECT id, nama, role, divisi FROM users 
+                        WHERE divisi = ? AND id != ?
+                        ORDER BY role
+                    """, (selected_divisi_nr, user["id"]))
+
+                render_non_routine_form(subordinates, "Sebagai Direksi, Anda memiliki akses penuh untuk mendelegasikan tugas ke seluruh karyawan.")
             else:
-                subordinates = fetch_all("""
-                    SELECT id, nama, role, divisi FROM users
-                    WHERE divisi = ? AND id != ? AND (
-                        LOWER(role) LIKE '%manager%'
-                        OR LOWER(role) LIKE '%supervisor%'
-                        OR role IN ('Business Development','Sekretaris Direksi','Kabag. Promosi & CS')
-                    ) ORDER BY role
-                """, (selected_divisi_nr, user["id"]))
+                # Logika target non-rutinitas untuk Manager / Atasan Non-Direksi
+                sesama_manager = fetch_all("SELECT id, nama, role, divisi FROM users WHERE id != ? AND LOWER(role) LIKE '%manager%' ORDER BY divisi, role", (user["id"],))
+                sesama_nonstruktur = fetch_all("SELECT id, nama, role, divisi FROM users WHERE id != ? AND role IN ('Business Development','Sekretaris Direksi','Kabag. Promosi & CS') ORDER BY divisi, role", (user["id"],))
+                bawahan_sendiri = fetch_all("SELECT id, nama, role, divisi FROM users WHERE atasan_id = ? ORDER BY role", (user["id"],))
 
-            render_non_routine_form(subordinates, "Sebagai Direksi, Anda dapat menugaskan ke seluruh jajaran Manager, Supervisor, dan Divisi Khusus.")
+                seen_ids = set()
+                combined = []
+                for u in sesama_manager + sesama_nonstruktur + bawahan_sendiri:
+                    if u["id"] not in seen_ids:
+                        seen_ids.add(u["id"])
+                        combined.append(u)
 
-    # ================================================================
-    # MANAGER & NON-STRUKTURAL
-    # ================================================================
+                bawahan_ids = {u["id"] for u in bawahan_sendiri}
+                combined.sort(key=lambda u: (0 if u["id"] in bawahan_ids else 1, u["nama"]))
+
+                render_non_routine_form(
+                    combined,
+                    f"Sebagai **{user_role}**, Anda dapat mendelegasikan ke sesama Manager, Tim Non-Struktural lintas divisi, dan bawahan langsung Anda."
+                )
+
+    # Jika dia setara manager tapi TIDAK punya bawahan, langsung tampilkan form Non-Rutinitas saja (Tanpa Tab)
     elif is_setara_manager:
-        # 1. Sesama manager lintas divisi
-        sesama_manager = fetch_all("""
-            SELECT id, nama, role, divisi FROM users
-            WHERE id != ?
-            AND LOWER(role) LIKE '%manager%'
-            ORDER BY divisi, role
-        """, (user["id"],))
-
-        # 2. Sesama non-struktural lintas divisi
-        sesama_nonstruktur = fetch_all("""
-            SELECT id, nama, role, divisi FROM users
-            WHERE id != ?
-            AND role IN ('Business Development','Sekretaris Direksi','Kabag. Promosi & CS')
-            ORDER BY divisi, role
-        """, (user["id"],))
-
-        # 3. Bawahan sendiri (user yang atasan_id = id saya)
-        bawahan_sendiri = fetch_all("""
-            SELECT id, nama, role, divisi FROM users
-            WHERE atasan_id = ?
-            ORDER BY role
-        """, (user["id"],))
-
-        # Gabung & deduplikasi berdasarkan id
+        sesama_manager = fetch_all("SELECT id, nama, role, divisi FROM users WHERE id != ? AND LOWER(role) LIKE '%manager%' ORDER BY divisi, role", (user["id"],))
+        sesama_nonstruktur = fetch_all("SELECT id, nama, role, divisi FROM users WHERE id != ? AND role IN ('Business Development','Sekretaris Direksi','Kabag. Promosi & CS') ORDER BY divisi, role", (user["id"],))
+        
         seen_ids = set()
         combined = []
-        for u in sesama_manager + sesama_nonstruktur + bawahan_sendiri:
+        for u in sesama_manager + sesama_nonstruktur:
             if u["id"] not in seen_ids:
                 seen_ids.add(u["id"])
                 combined.append(u)
-
-        # Urutkan: bawahan sendiri dulu, lalu sisanya alphabetical
-        bawahan_ids = {u["id"] for u in bawahan_sendiri}
-        combined.sort(key=lambda u: (0 if u["id"] in bawahan_ids else 1, u["nama"]))
+        combined.sort(key=lambda u: u["nama"])
 
         render_non_routine_form(
             combined,
-            f"Sebagai **{user_role}**, Anda dapat mendelegasikan ke sesama Manager, Tim Non-Struktural lintas divisi, dan bawahan langsung Anda."
+            f"Sebagai **{user_role}**, Anda dapat mendelegasikan ke sesama Manager dan Tim Non-Struktural lintas divisi."
         )
-
-    else:
-        st.warning("Anda tidak memiliki hak akses untuk halaman ini.")
